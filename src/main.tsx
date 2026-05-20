@@ -33,6 +33,20 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
+import { listInboxMessages, listNewInboxHistory } from "./gmail/gmailApi";
+import {
+  connectGmailOAuth,
+  disconnectGmailOAuth,
+  getGmailAccessToken,
+  hasDesktopGmailBridge,
+  simulateInboxSync,
+} from "./gmail/oauthBridge";
+import {
+  GMAIL_SCOPES,
+  type GmailBridgeMode,
+  type GmailConnectionStatus,
+  type GmailSyncSnapshot,
+} from "./gmail/types";
 import "./styles.css";
 
 type Language = "en" | "es";
@@ -50,6 +64,7 @@ type TimeKey = "tenTwentyFour" | "nineFifteen" | "yesterday" | "tuesday";
 type SourceKey = "shipping" | "returns" | "pricing" | "billing" | "account" | "sales";
 type SatisfactionKey = "positive" | "neutral" | "new";
 type LastContactKey = "today" | "yesterday" | "twoDaysAgo" | "threeDaysAgo" | "oneWeekAgo" | "tuesday";
+type IntegrationTone = "connected" | "syncing" | "idle" | "error";
 
 type MailItem = {
   id: number;
@@ -118,6 +133,37 @@ const copy = {
       activityLog: "Activity log",
     },
     connected: "Connected",
+    gmail: {
+      title: "Gmail connection",
+      description:
+        "Ready for Google OAuth in the desktop app. The browser build uses a safe demo bridge until Tauri or Electron provides the secure token flow.",
+      desktopReady: "Desktop OAuth bridge detected",
+      demoReady: "Demo bridge active",
+      connect: "Connect Gmail",
+      syncNow: "Sync now",
+      disconnect: "Disconnect",
+      account: "Account",
+      lastSync: "Last sync",
+      historyId: "History ID",
+      loadedMessages: "Loaded messages",
+      nextCheck: "Next check",
+      scopes: "Scopes",
+      neverSynced: "Not synced yet",
+      noAccount: "No account",
+      noHistory: "Waiting for first sync",
+      errorHelp: "The Gmail connection needs attention. Try reconnecting.",
+      mode: {
+        "desktop-oauth": "Desktop OAuth",
+        "demo-bridge": "Demo bridge",
+      },
+      status: {
+        disconnected: "Disconnected",
+        connecting: "Connecting",
+        connected: "Connected",
+        syncing: "Syncing",
+        error: "Needs attention",
+      },
+    },
     draftFirstMode: "Draft-first (review required)",
     language: "Language",
     languageName: {
@@ -246,6 +292,37 @@ const copy = {
       activityLog: "Registro de actividad",
     },
     connected: "Conectado",
+    gmail: {
+      title: "Conexi\u00f3n Gmail",
+      description:
+        "Preparado para Google OAuth en la app de escritorio. La versi\u00f3n web usa un bridge demo seguro hasta que Tauri o Electron provea el flujo de token.",
+      desktopReady: "Bridge OAuth de escritorio detectado",
+      demoReady: "Bridge demo activo",
+      connect: "Conectar Gmail",
+      syncNow: "Sincronizar",
+      disconnect: "Desconectar",
+      account: "Cuenta",
+      lastSync: "\u00daltima sincronizaci\u00f3n",
+      historyId: "ID de historial",
+      loadedMessages: "Mensajes cargados",
+      nextCheck: "Pr\u00f3xima revisi\u00f3n",
+      scopes: "Permisos",
+      neverSynced: "A\u00fan sin sincronizar",
+      noAccount: "Sin cuenta",
+      noHistory: "Esperando primera sincronizaci\u00f3n",
+      errorHelp: "La conexi\u00f3n Gmail necesita atenci\u00f3n. Prob\u00e1 reconectar.",
+      mode: {
+        "desktop-oauth": "OAuth de escritorio",
+        "demo-bridge": "Bridge demo",
+      },
+      status: {
+        disconnected: "Desconectado",
+        connecting: "Conectando",
+        connected: "Conectado",
+        syncing: "Sincronizando",
+        error: "Revisar",
+      },
+    },
     draftFirstMode: "Borrador primero (requiere revisi\u00f3n)",
     language: "Idioma",
     languageName: {
@@ -603,6 +680,16 @@ const initialDrafts = Object.fromEntries(mails.map((mail) => [mail.id, mail.answ
   string
 >;
 
+const initialGmailSync: GmailSyncSnapshot = {
+  status: "disconnected",
+  mode: "demo-bridge",
+  accountEmail: "",
+  lastSyncAt: "",
+  nextSyncInSeconds: 90,
+  historyId: "",
+  loadedMessages: 0,
+};
+
 function AutoInboxApp() {
   const [language, setLanguage] = React.useState<Language>("en");
   const [selectedId, setSelectedId] = React.useState(1);
@@ -611,6 +698,7 @@ function AutoInboxApp() {
   const [queuePaused, setQueuePaused] = React.useState(false);
   const [sentIds, setSentIds] = React.useState<number[]>([7]);
   const [drafts, setDrafts] = React.useState<Record<number, string>>(initialDrafts);
+  const [gmailSync, setGmailSync] = React.useState<GmailSyncSnapshot>(initialGmailSync);
 
   const t = copy[language];
   const content = localizedContent[language];
@@ -618,6 +706,15 @@ function AutoInboxApp() {
   const draftText = drafts[selected.id] ?? "";
   const selectedSent = sentIds.includes(selected.id);
   const selectedIntent = t.intents[selected.intentKey];
+  const gmailBridgeAvailable = hasDesktopGmailBridge();
+  const gmailIntegrationTone = getIntegrationTone(gmailSync.status);
+  const gmailModeLabel = t.gmail.mode[gmailSync.mode];
+  const lastSyncLabel = gmailSync.lastSyncAt
+    ? new Intl.DateTimeFormat(language === "es" ? "es-AR" : "en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(gmailSync.lastSyncAt))
+    : t.gmail.neverSynced;
 
   const filtered = mails.filter((mail) => {
     const translatedIntent = t.intents[mail.intentKey];
@@ -633,6 +730,89 @@ function AutoInboxApp() {
   const sendReply = () => {
     if (!draftText.trim() || selectedSent || queuePaused) return;
     setSentIds((current) => Array.from(new Set([...current, selected.id])));
+  };
+
+  const connectGmail = async () => {
+    const mode: GmailBridgeMode = gmailBridgeAvailable ? "desktop-oauth" : "demo-bridge";
+    setGmailSync((current) => ({ ...current, status: "connecting", mode, error: undefined }));
+
+    try {
+      const session = await connectGmailOAuth();
+      setGmailSync({
+        status: "connected",
+        mode: session.mode,
+        accountEmail: session.accountEmail,
+        lastSyncAt: new Date().toISOString(),
+        nextSyncInSeconds: 90,
+        historyId: session.historyId ?? "",
+        loadedMessages: mails.length,
+      });
+    } catch {
+      setGmailSync((current) => ({ ...current, status: "error" }));
+    }
+  };
+
+  const syncGmail = async () => {
+    const previous = gmailSync;
+    if (previous.status === "disconnected" || previous.status === "connecting") return;
+
+    setGmailSync((current) => ({ ...current, status: "syncing", error: undefined }));
+
+    try {
+      const accessToken = await getGmailAccessToken();
+      if (accessToken && previous.historyId) {
+        const history = await listNewInboxHistory(accessToken, previous.historyId);
+        const messageCount =
+          history.history?.reduce(
+            (total, item) => total + (item.messagesAdded?.length ?? 0),
+            0,
+          ) ?? 0;
+
+        setGmailSync((current) => ({
+          ...current,
+          status: "connected",
+          lastSyncAt: new Date().toISOString(),
+          historyId: history.historyId ?? current.historyId,
+          loadedMessages: current.loadedMessages + messageCount,
+        }));
+        return;
+      }
+
+      if (accessToken) {
+        const messages = await listInboxMessages(accessToken, 10);
+        setGmailSync((current) => ({
+          ...current,
+          status: "connected",
+          lastSyncAt: new Date().toISOString(),
+          historyId: messages[0]?.historyId ?? current.historyId,
+          loadedMessages: messages.length,
+        }));
+        return;
+      }
+
+      const snapshot = await simulateInboxSync(previous.historyId, previous.loadedMessages);
+      setGmailSync((current) => ({
+        ...current,
+        status: "connected",
+        lastSyncAt: new Date().toISOString(),
+        historyId: snapshot.historyId,
+        loadedMessages: snapshot.loadedMessages,
+      }));
+    } catch {
+      setGmailSync((current) => ({ ...current, status: "error" }));
+    }
+  };
+
+  const disconnectGmail = async () => {
+    if (gmailSync.status === "connecting" || gmailSync.status === "syncing") return;
+    setGmailSync((current) => ({ ...current, status: "syncing" }));
+
+    try {
+      await disconnectGmailOAuth();
+      setGmailSync(initialGmailSync);
+    } catch {
+      setGmailSync((current) => ({ ...current, status: "error" }));
+    }
   };
 
   return (
@@ -671,7 +851,12 @@ function AutoInboxApp() {
 
         <div className="sidebar-group integrations">
           <p>{t.sections.integrations}</p>
-          <IntegrationRow icon={<AtSign size={16} />} label="Gmail" status={t.connected} />
+          <IntegrationRow
+            icon={<AtSign size={16} />}
+            label="Gmail"
+            status={t.gmail.status[gmailSync.status]}
+            tone={gmailIntegrationTone}
+          />
           <IntegrationRow icon={<Sparkles size={16} />} label="OpenAI" status={t.connected} />
           <IntegrationRow icon={<Archive size={16} />} label="Google Sheets" status={t.connected} />
         </div>
@@ -914,6 +1099,78 @@ function AutoInboxApp() {
           <p className="draft-note">{t.draftNote}</p>
         </section>
 
+        <section className="gmail-card">
+          <div className="section-heading">
+            <h2>
+              <AtSign size={17} />
+              {t.gmail.title}
+            </h2>
+            <span className={`connection-pill ${gmailSync.status}`}>
+              {t.gmail.status[gmailSync.status]}
+            </span>
+          </div>
+
+          <p className="gmail-description">
+            {gmailBridgeAvailable ? t.gmail.desktopReady : t.gmail.demoReady}
+            {" - "}
+            {t.gmail.description}
+          </p>
+
+          <div className="gmail-actions">
+            <button
+              className="secondary-button"
+              onClick={connectGmail}
+              disabled={gmailSync.status === "connecting" || gmailSync.status === "syncing"}
+            >
+              <AtSign size={16} />
+              {t.gmail.connect}
+            </button>
+            <button
+              className="secondary-button"
+              onClick={syncGmail}
+              disabled={
+                gmailSync.status === "disconnected" ||
+                gmailSync.status === "connecting" ||
+                gmailSync.status === "syncing"
+              }
+            >
+              <RefreshCcw size={16} />
+              {t.gmail.syncNow}
+            </button>
+            <button
+              className="ghost-button"
+              onClick={disconnectGmail}
+              disabled={
+                gmailSync.status === "disconnected" ||
+                gmailSync.status === "connecting" ||
+                gmailSync.status === "syncing"
+              }
+            >
+              {t.gmail.disconnect}
+            </button>
+          </div>
+
+          <div className="gmail-grid">
+            <Metric label={t.gmail.account} value={gmailSync.accountEmail || t.gmail.noAccount} />
+            <Metric label={t.gmail.lastSync} value={lastSyncLabel} />
+            <Metric label={t.gmail.nextCheck} value={`${gmailSync.nextSyncInSeconds}s`} />
+            <Metric label={t.gmail.historyId} value={gmailSync.historyId || t.gmail.noHistory} />
+            <Metric label={t.gmail.loadedMessages} value={String(gmailSync.loadedMessages)} />
+            <Metric label={t.sections.mode} value={gmailModeLabel} />
+          </div>
+
+          <div className="scope-list" aria-label={t.gmail.scopes}>
+            <span>{t.gmail.scopes}</span>
+            {GMAIL_SCOPES.map((scope) => (
+              <code key={scope}>{scope.replace("https://www.googleapis.com/auth/", "")}</code>
+            ))}
+          </div>
+
+          {gmailSync.status === "error" ? (
+            <p className="gmail-error">{t.gmail.errorHelp}</p>
+          ) : null}
+        </section>
+
         <section className="automation-card">
           <div className="section-heading">
             <h2>{t.sections.automation}</h2>
@@ -970,13 +1227,15 @@ function IntegrationRow({
   icon,
   label,
   status,
+  tone = "connected",
 }: {
   icon: React.ReactNode;
   label: string;
   status: string;
+  tone?: IntegrationTone;
 }) {
   return (
-    <div className="integration-row">
+    <div className={`integration-row ${tone}`}>
       <span>
         {icon}
         {label}
@@ -987,6 +1246,13 @@ function IntegrationRow({
       </strong>
     </div>
   );
+}
+
+function getIntegrationTone(status: GmailConnectionStatus): IntegrationTone {
+  if (status === "connected") return "connected";
+  if (status === "connecting" || status === "syncing") return "syncing";
+  if (status === "error") return "error";
+  return "idle";
 }
 
 function Avatar({ initials, accent }: { initials: string; accent: string }) {

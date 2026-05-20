@@ -11,7 +11,7 @@ Auto-inbox is an open-source AI inbox assistant for teams that want faster custo
 
 ## Overview
 
-Auto-inbox turns the workflow of an AI email responder into a product-ready interface. The current version is a polished frontend prototype built for portfolio and open-source iteration. It uses realistic demo data so anyone can explore the experience without connecting Gmail, Google Sheets, or OpenAI credentials.
+Auto-inbox turns the workflow of an AI email responder into a product-ready interface. The current version is a polished frontend prototype built for portfolio and open-source iteration. It uses realistic demo data so anyone can explore the experience without connecting Gmail, Google Sheets, or OpenAI credentials, and it already includes a desktop-ready Gmail OAuth bridge layer for the next Tauri or Electron step.
 
 The product direction is intentionally human-in-the-loop: AI prepares the response, but the user reviews and sends it manually.
 
@@ -22,7 +22,9 @@ The product direction is intentionally human-in-the-loop: AI prepares the respon
 - Searchable inbox list with unread states and selected-message focus.
 - Email detail view with customer metadata, intent, confidence, FAQ matches, and history.
 - AI suggested reply composer with formatting controls, regenerate action, and manual `Enviar` button.
+- Desktop-ready Gmail OAuth connection panel with sync state, history ID tracking, and least-privilege scopes.
 - Automation status panel and activity log for observability.
+- English and Spanish interface language toggle while keeping email content untouched.
 - Responsive layout with no horizontal overflow on mobile.
 
 ## Tech Stack
@@ -48,9 +50,21 @@ Open the local URL printed by Vite.
 npm run build
 ```
 
+## Gmail OAuth Architecture
+
+Auto-inbox is prepared for the safest desktop path: Google OAuth 2.0 for installed apps, Gmail API scopes, and secure token storage in the desktop shell.
+
+- The React UI calls a `window.autoInboxGmail` bridge when Tauri or Electron exposes it.
+- The browser build falls back to a demo bridge so the open-source app remains easy to run.
+- The first production scopes are `gmail.readonly` and `gmail.compose`, avoiding full mailbox access unless the product truly needs it.
+- Initial sync can use `users.messages.list` and `users.messages.get`.
+- Incremental sync can persist the latest `historyId` and call `users.history.list`.
+- Sending should stay human-in-the-loop: generate a Gmail draft first, then let the user review and send.
+- Access and refresh tokens should live in the OS keychain, not in frontend storage.
+
 ## Product Roadmap
 
-- Gmail OAuth connection and inbox sync.
+- Tauri or Electron shell that implements the Google OAuth installed-app flow.
 - Google Sheets FAQ source and enquiry log.
 - OpenAI-powered classification and reply generation.
 - Gmail draft creation before sending.
@@ -64,8 +78,10 @@ npm run build
 ```text
 Auto-Inbox/
   docs/images/             README and GitHub assets
+  src/gmail/               Gmail OAuth bridge, API helpers, and sync types
   src/main.tsx             Main React application
   src/styles.css           Premium dashboard styling
+  .env.example             Future desktop OAuth configuration placeholders
   index.html               Vite entry
   package.json             Scripts and dependencies
 ```
