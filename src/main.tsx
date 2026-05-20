@@ -35,8 +35,21 @@ import {
 } from "lucide-react";
 import "./styles.css";
 
+type Language = "en" | "es";
 type MailStatus = "draft" | "ready" | "waiting" | "sent";
-type MailFolder = "All" | "Unreplied" | "Flagged";
+type MailFolder = "all" | "unreplied" | "flagged";
+type IntentKey =
+  | "shippingIssue"
+  | "returnRequest"
+  | "pricing"
+  | "billing"
+  | "accountAccess"
+  | "sales"
+  | "shipping";
+type TimeKey = "tenTwentyFour" | "nineFifteen" | "yesterday" | "tuesday";
+type SourceKey = "shipping" | "returns" | "pricing" | "billing" | "account" | "sales";
+type SatisfactionKey = "positive" | "neutral" | "new";
+type LastContactKey = "today" | "yesterday" | "twoDaysAgo" | "threeDaysAgo" | "oneWeekAgo" | "tuesday";
 
 type MailItem = {
   id: number;
@@ -46,19 +59,289 @@ type MailItem = {
   subject: string;
   preview: string;
   body: string[];
-  intent: string;
+  intentKey: IntentKey;
   confidence: number;
-  time: string;
+  timeKey: TimeKey;
   status: MailStatus;
   unread?: boolean;
   accent: string;
-  source: string;
+  sourceKey: SourceKey;
   answer: string;
   history: {
     conversations: number;
-    lastContact: string;
-    satisfaction: string;
+    lastContactKey: LastContactKey;
+    satisfactionKey: SatisfactionKey;
   };
+};
+
+type KnowledgeMatch = {
+  question: string;
+  answer: string;
+  sourceKey: SourceKey;
+};
+
+type LocaleContent = {
+  knowledgeMatches: KnowledgeMatch[];
+  activityItems: string[];
+};
+
+const copy = {
+  en: {
+    ariaMailbox: "Mailbox",
+    formattingToolbar: "Formatting toolbar",
+    pauseProcessing: "Pause processing",
+    resumeProcessing: "Resume processing",
+    folders: {
+      all: "All",
+      unreplied: "Unreplied",
+      flagged: "Flagged",
+    },
+    nav: {
+      inbox: "Inbox",
+      drafts: "Drafts",
+      sent: "Sent",
+      allMail: "All Mail",
+      spam: "Spam",
+      trash: "Trash",
+      rules: "Rules",
+      signatures: "Signatures",
+      settings: "Settings",
+    },
+    sections: {
+      automation: "Automation",
+      integrations: "Integrations",
+      mode: "Mode",
+      settings: "Settings",
+      knowledge: "FAQ / Knowledge base matches",
+      customerHistory: "Customer history",
+      suggestedReply: "AI suggested reply",
+      activityLog: "Activity log",
+    },
+    connected: "Connected",
+    draftFirstMode: "Draft-first (review required)",
+    language: "Language",
+    languageName: {
+      en: "English",
+      es: "Spanish",
+    },
+    searchPlaceholder: "Search emails...",
+    filter: "Filter",
+    toolbar: {
+      back: "Back",
+      archive: "Archive",
+      info: "Info",
+      snooze: "Snooze",
+      trash: "Trash",
+      markUnread: "Mark unread",
+      tag: "Tag",
+      more: "More",
+      reply: "Reply",
+      undo: "Undo",
+      regenerate: "Regenerate",
+      bold: "Bold",
+      italic: "Italic",
+      bulletedList: "Bulleted list",
+      link: "Link",
+    },
+    to: "to",
+    chips: {
+      intent: "Intent",
+      confidence: "Confidence",
+    },
+    table: {
+      question: "Question",
+      answer: "Answer",
+      source: "Source",
+    },
+    metrics: {
+      totalConversations: "Total conversations",
+      lastContact: "Last contact",
+      satisfaction: "Satisfaction",
+      nextCheckIn: "Next check in",
+      processedToday: "Processed today",
+    },
+    status: {
+      draft: "Draft",
+      ready: "Ready",
+      waiting: "Ignored",
+      sent: "Sent",
+    },
+    intents: {
+      shippingIssue: "Shipping Issue",
+      returnRequest: "Return Request",
+      pricing: "Pricing",
+      billing: "Billing",
+      accountAccess: "Account Access",
+      sales: "Sales",
+      shipping: "Shipping",
+    },
+    sources: {
+      shipping: "Shipping_FAQ",
+      returns: "Returns_FAQ",
+      pricing: "Pricing_FAQ",
+      billing: "Billing_FAQ",
+      account: "Account_FAQ",
+      sales: "Sales_FAQ",
+    },
+    time: {
+      tenTwentyFour: "10:24 AM",
+      nineFifteen: "9:15 AM",
+      yesterday: "Yesterday",
+      tuesday: "Tuesday",
+    },
+    lastContact: {
+      today: "Today",
+      yesterday: "Yesterday",
+      twoDaysAgo: "2 days ago",
+      threeDaysAgo: "3 days ago",
+      oneWeekAgo: "1 week ago",
+      tuesday: "Tuesday",
+    },
+    satisfaction: {
+      positive: "Positive",
+      neutral: "Neutral",
+      new: "New",
+    },
+    running: "Running",
+    paused: "Paused",
+    draft: "Draft",
+    generatedReply: "Generated reply",
+    regenerate: "Regenerate",
+    send: "Send",
+    sentAction: "Sent",
+    draftNote: "Draft-first mode - You review and send manually.",
+    viewAll: "View all",
+    noDraft: "No suggested reply is available for this message.",
+    minuteValue: "2 min",
+  },
+  es: {
+    ariaMailbox: "Buz\u00f3n",
+    formattingToolbar: "Barra de formato",
+    pauseProcessing: "Pausar proceso",
+    resumeProcessing: "Reanudar proceso",
+    folders: {
+      all: "Todo",
+      unreplied: "Sin responder",
+      flagged: "Marcados",
+    },
+    nav: {
+      inbox: "Bandeja",
+      drafts: "Borradores",
+      sent: "Enviados",
+      allMail: "Todo el correo",
+      spam: "Spam",
+      trash: "Papelera",
+      rules: "Reglas",
+      signatures: "Firmas",
+      settings: "Configuraci\u00f3n",
+    },
+    sections: {
+      automation: "Automatizaci\u00f3n",
+      integrations: "Integraciones",
+      mode: "Modo",
+      settings: "Configuraci\u00f3n",
+      knowledge: "FAQ / Base de conocimiento",
+      customerHistory: "Historial del cliente",
+      suggestedReply: "Respuesta sugerida por IA",
+      activityLog: "Registro de actividad",
+    },
+    connected: "Conectado",
+    draftFirstMode: "Borrador primero (requiere revisi\u00f3n)",
+    language: "Idioma",
+    languageName: {
+      en: "Ingl\u00e9s",
+      es: "Espa\u00f1ol",
+    },
+    searchPlaceholder: "Buscar emails...",
+    filter: "Filtrar",
+    toolbar: {
+      back: "Volver",
+      archive: "Archivar",
+      info: "Informaci\u00f3n",
+      snooze: "Posponer",
+      trash: "Eliminar",
+      markUnread: "Marcar como no le\u00eddo",
+      tag: "Etiqueta",
+      more: "M\u00e1s",
+      reply: "Responder",
+      undo: "Deshacer",
+      regenerate: "Regenerar",
+      bold: "Negrita",
+      italic: "Cursiva",
+      bulletedList: "Lista",
+      link: "Enlace",
+    },
+    to: "para",
+    chips: {
+      intent: "Intenci\u00f3n",
+      confidence: "Confianza",
+    },
+    table: {
+      question: "Pregunta",
+      answer: "Respuesta",
+      source: "Fuente",
+    },
+    metrics: {
+      totalConversations: "Conversaciones totales",
+      lastContact: "\u00daltimo contacto",
+      satisfaction: "Satisfacci\u00f3n",
+      nextCheckIn: "Pr\u00f3xima revisi\u00f3n",
+      processedToday: "Procesados hoy",
+    },
+    status: {
+      draft: "Borrador",
+      ready: "Listo",
+      waiting: "Ignorado",
+      sent: "Enviado",
+    },
+    intents: {
+      shippingIssue: "Problema de env\u00edo",
+      returnRequest: "Solicitud de devoluci\u00f3n",
+      pricing: "Precios",
+      billing: "Facturaci\u00f3n",
+      accountAccess: "Acceso a cuenta",
+      sales: "Ventas",
+      shipping: "Env\u00edo",
+    },
+    sources: {
+      shipping: "Env\u00edos_FAQ",
+      returns: "Devoluciones_FAQ",
+      pricing: "Precios_FAQ",
+      billing: "Facturaci\u00f3n_FAQ",
+      account: "Cuenta_FAQ",
+      sales: "Ventas_FAQ",
+    },
+    time: {
+      tenTwentyFour: "10:24 AM",
+      nineFifteen: "9:15 AM",
+      yesterday: "Ayer",
+      tuesday: "Martes",
+    },
+    lastContact: {
+      today: "Hoy",
+      yesterday: "Ayer",
+      twoDaysAgo: "hace 2 d\u00edas",
+      threeDaysAgo: "hace 3 d\u00edas",
+      oneWeekAgo: "hace 1 semana",
+      tuesday: "Martes",
+    },
+    satisfaction: {
+      positive: "Positiva",
+      neutral: "Neutral",
+      new: "Nueva",
+    },
+    running: "Activo",
+    paused: "Pausado",
+    draft: "Borrador",
+    generatedReply: "Respuesta generada",
+    regenerate: "Regenerar",
+    send: "Enviar",
+    sentAction: "Enviado",
+    draftNote: "Modo borrador primero - Revisas y env\u00edas manualmente.",
+    viewAll: "Ver todo",
+    noDraft: "No hay una respuesta sugerida disponible para este mensaje.",
+    minuteValue: "2 min",
+  },
 };
 
 const mails: MailItem[] = [
@@ -76,19 +359,19 @@ const mails: MailItem[] = [
       "Could you please help me with this?",
       "Thanks,\nAlex",
     ],
-    intent: "Shipping Issue",
+    intentKey: "shippingIssue",
     confidence: 92,
-    time: "10:24 AM",
+    timeKey: "tenTwentyFour",
     status: "ready",
     unread: true,
     accent: "teal",
-    source: "Shipping_FAQ",
+    sourceKey: "shipping",
     answer:
       "Hi Alex,\n\nThanks for reaching out. I'm sorry to hear about the delay.\n\nI've checked your order #12345 and see that it's currently in transit. Tracking updates can take up to 48 hours to appear.\n\nYou can track your package here: [tracking link]\n\nIf you don't see any updates by tomorrow, just let me know and I'll gladly look into this further.\n\nBest regards,\nSupport Team",
     history: {
       conversations: 3,
-      lastContact: "2 days ago",
-      satisfaction: "Positive",
+      lastContactKey: "twoDaysAgo",
+      satisfactionKey: "positive",
     },
   },
   {
@@ -104,19 +387,19 @@ const mails: MailItem[] = [
       "Can you tell me what the next steps are?",
       "Thanks,\nSarah",
     ],
-    intent: "Return Request",
+    intentKey: "returnRequest",
     confidence: 88,
-    time: "9:15 AM",
+    timeKey: "nineFifteen",
     status: "draft",
     unread: true,
     accent: "blue",
-    source: "Returns_FAQ",
+    sourceKey: "returns",
     answer:
       "Hi Sarah,\n\nThanks for contacting us. We can help with the return.\n\nPlease send your order number and confirm whether the lamp is still in its original packaging. Once we have that, we will share the return label and next steps.\n\nBest regards,\nSupport Team",
     history: {
       conversations: 1,
-      lastContact: "Today",
-      satisfaction: "New",
+      lastContactKey: "today",
+      satisfactionKey: "new",
     },
   },
   {
@@ -132,19 +415,19 @@ const mails: MailItem[] = [
       "We are deciding this week and want to make sure we choose correctly.",
       "Michael",
     ],
-    intent: "Pricing",
+    intentKey: "pricing",
     confidence: 94,
-    time: "Yesterday",
+    timeKey: "yesterday",
     status: "ready",
     unread: true,
     accent: "blue",
-    source: "Pricing_FAQ",
+    sourceKey: "pricing",
     answer:
       "Hi Michael,\n\nHappy to help. The starter plan is best for small teams that need the core inbox workflow, while the growth plan adds shared rules, advanced reporting, and higher usage limits.\n\nIf you share your team size and expected monthly volume, I can recommend the best fit.",
     history: {
       conversations: 2,
-      lastContact: "Yesterday",
-      satisfaction: "Positive",
+      lastContactKey: "yesterday",
+      satisfactionKey: "positive",
     },
   },
   {
@@ -159,18 +442,18 @@ const mails: MailItem[] = [
       "Can you resend the invoice for my last payment? I need it for accounting before Friday.",
       "Thanks,\nPriya",
     ],
-    intent: "Billing",
+    intentKey: "billing",
     confidence: 90,
-    time: "Yesterday",
+    timeKey: "yesterday",
     status: "draft",
     accent: "amber",
-    source: "Billing_FAQ",
+    sourceKey: "billing",
     answer:
       "Hi Priya,\n\nOf course. I can help resend the invoice. Please confirm the billing email or the last four digits of the payment method so we can locate the correct record.\n\nBest regards,\nSupport Team",
     history: {
       conversations: 5,
-      lastContact: "1 week ago",
-      satisfaction: "Positive",
+      lastContactKey: "oneWeekAgo",
+      satisfactionKey: "positive",
     },
   },
   {
@@ -186,18 +469,18 @@ const mails: MailItem[] = [
       "Can someone check this?",
       "David",
     ],
-    intent: "Account Access",
+    intentKey: "accountAccess",
     confidence: 86,
-    time: "Yesterday",
+    timeKey: "yesterday",
     status: "ready",
     accent: "green",
-    source: "Account_FAQ",
+    sourceKey: "account",
     answer:
       "Hi David,\n\nThanks for letting us know. Please try clearing your browser cache or using a private window first. If the issue continues, send us the email linked to your account and we will check the login status from our side.",
     history: {
       conversations: 2,
-      lastContact: "3 days ago",
-      satisfaction: "Neutral",
+      lastContactKey: "threeDaysAgo",
+      satisfactionKey: "neutral",
     },
   },
   {
@@ -212,18 +495,18 @@ const mails: MailItem[] = [
       "We're interested in placing a bulk order for our office. Do you offer volume pricing for 40 units?",
       "Emma",
     ],
-    intent: "Sales",
+    intentKey: "sales",
     confidence: 96,
-    time: "Tuesday",
+    timeKey: "tuesday",
     status: "ready",
     accent: "rose",
-    source: "Sales_FAQ",
+    sourceKey: "sales",
     answer:
       "Hi Emma,\n\nThanks for reaching out. We do offer volume pricing for bulk orders. For 40 units, our team can prepare a custom quote with delivery estimates and any available discount tiers.\n\nWould you like us to send a quote to this email?",
     history: {
       conversations: 1,
-      lastContact: "Tuesday",
-      satisfaction: "New",
+      lastContactKey: "tuesday",
+      satisfactionKey: "new",
     },
   },
   {
@@ -238,82 +521,112 @@ const mails: MailItem[] = [
       "Do you ship to Canada? What are the costs and typical delivery times?",
       "James",
     ],
-    intent: "Shipping",
+    intentKey: "shipping",
     confidence: 91,
-    time: "Tuesday",
+    timeKey: "tuesday",
     status: "sent",
     accent: "violet",
-    source: "Shipping_FAQ",
+    sourceKey: "shipping",
     answer:
       "Hi James,\n\nYes, we ship to Canada. Shipping costs and delivery estimates are calculated during checkout based on destination and package size.\n\nBest regards,\nSupport Team",
     history: {
       conversations: 4,
-      lastContact: "Tuesday",
-      satisfaction: "Positive",
+      lastContactKey: "tuesday",
+      satisfactionKey: "positive",
     },
   },
 ];
 
-const knowledgeMatches = [
-  {
-    question: "Where is my order?",
-    answer: "Orders typically ship within 1-2 business days.",
-    source: "Shipping_FAQ",
+const localizedContent: Record<Language, LocaleContent> = {
+  en: {
+    knowledgeMatches: [
+      {
+        question: "Where is my order?",
+        answer: "Orders typically ship within 1-2 business days.",
+        sourceKey: "shipping",
+      },
+      {
+        question: "How can I track my order?",
+        answer: "Once your order ships, you will receive a tracking link.",
+        sourceKey: "shipping",
+      },
+      {
+        question: "What if my tracking is not updating?",
+        answer: "Tracking updates may take up to 48 hours to appear.",
+        sourceKey: "shipping",
+      },
+    ],
+    activityItems: [
+      "Email received from Alex Johnson",
+      "Intent identified: Shipping Issue (92%)",
+      "FAQ matches found (3)",
+      "AI reply generated",
+      "Awaiting review",
+    ],
   },
-  {
-    question: "How can I track my order?",
-    answer: "Once your order ships, you will receive a tracking link.",
-    source: "Shipping_FAQ",
+  es: {
+    knowledgeMatches: [
+      {
+        question: "D\u00f3nde est\u00e1 mi pedido?",
+        answer: "Los pedidos normalmente se despachan en 1-2 d\u00edas h\u00e1biles.",
+        sourceKey: "shipping",
+      },
+      {
+        question: "C\u00f3mo puedo seguir mi pedido?",
+        answer: "Cuando el pedido se despacha, recib\u00eds un enlace de seguimiento.",
+        sourceKey: "shipping",
+      },
+      {
+        question: "Qu\u00e9 pasa si el seguimiento no se actualiza?",
+        answer: "Las actualizaciones pueden tardar hasta 48 horas en aparecer.",
+        sourceKey: "shipping",
+      },
+    ],
+    activityItems: [
+      "Email recibido de Alex Johnson",
+      "Intenci\u00f3n detectada: Problema de env\u00edo (92%)",
+      "Coincidencias FAQ encontradas (3)",
+      "Respuesta de IA generada",
+      "Esperando revisi\u00f3n",
+    ],
   },
-  {
-    question: "What if my tracking is not updating?",
-    answer: "Tracking updates may take up to 48 hours to appear.",
-    source: "Shipping_FAQ",
-  },
-];
-
-const statusLabel: Record<MailStatus, string> = {
-  draft: "Draft",
-  ready: "Ready",
-  waiting: "Ignored",
-  sent: "Sent",
 };
 
 const folderCounts: Record<MailFolder, number> = {
-  All: 12,
-  Unreplied: 7,
-  Flagged: 2,
+  all: 12,
+  unreplied: 7,
+  flagged: 2,
 };
 
-const activityItems = [
-  "Email received from Alex Johnson",
-  "Intent identified: Shipping Issue (92%)",
-  "FAQ matches found (3)",
-  "AI reply generated",
-  "Awaiting review",
-];
+const initialDrafts = Object.fromEntries(mails.map((mail) => [mail.id, mail.answer])) as Record<
+  number,
+  string
+>;
 
 function AutoInboxApp() {
+  const [language, setLanguage] = React.useState<Language>("en");
   const [selectedId, setSelectedId] = React.useState(1);
   const [query, setQuery] = React.useState("");
-  const [activeFolder, setActiveFolder] = React.useState<MailFolder>("All");
+  const [activeFolder, setActiveFolder] = React.useState<MailFolder>("all");
   const [queuePaused, setQueuePaused] = React.useState(false);
   const [sentIds, setSentIds] = React.useState<number[]>([7]);
-  const [drafts, setDrafts] = React.useState<Record<number, string>>(
-    Object.fromEntries(mails.map((mail) => [mail.id, mail.answer])),
-  );
+  const [drafts, setDrafts] = React.useState<Record<number, string>>(initialDrafts);
 
+  const t = copy[language];
+  const content = localizedContent[language];
   const selected = mails.find((mail) => mail.id === selectedId) ?? mails[0];
   const draftText = drafts[selected.id] ?? "";
   const selectedSent = sentIds.includes(selected.id);
+  const selectedIntent = t.intents[selected.intentKey];
 
   const filtered = mails.filter((mail) => {
-    const matchesQuery = `${mail.sender} ${mail.subject} ${mail.preview}`
+    const translatedIntent = t.intents[mail.intentKey];
+    const matchesQuery = `${mail.sender} ${mail.subject} ${mail.preview} ${translatedIntent}`
       .toLowerCase()
       .includes(query.toLowerCase());
     if (!matchesQuery) return false;
-    if (activeFolder === "Unreplied") return !sentIds.includes(mail.id);
-    if (activeFolder === "Flagged") return mail.confidence < 90 || mail.status === "draft";
+    if (activeFolder === "unreplied") return !sentIds.includes(mail.id);
+    if (activeFolder === "flagged") return mail.confidence < 90 || mail.status === "draft";
     return true;
   });
 
@@ -337,38 +650,52 @@ function AutoInboxApp() {
           onClick={() => setQueuePaused((current) => !current)}
         >
           <Pause size={16} />
-          {queuePaused ? "Resume processing" : "Pause processing"}
+          {queuePaused ? t.resumeProcessing : t.pauseProcessing}
         </button>
 
-        <nav className="sidebar-section" aria-label="Mailbox">
-          <NavItem icon={<Inbox size={17} />} label="Inbox" count={12} active />
-          <NavItem icon={<FilePenLine size={17} />} label="Drafts" count={8} />
-          <NavItem icon={<Send size={17} />} label="Sent" />
-          <NavItem icon={<Mail size={17} />} label="All Mail" />
-          <NavItem icon={<Shield size={17} />} label="Spam" />
-          <NavItem icon={<Trash2 size={17} />} label="Trash" />
+        <nav className="sidebar-section" aria-label={t.ariaMailbox}>
+          <NavItem icon={<Inbox size={17} />} label={t.nav.inbox} count={12} active />
+          <NavItem icon={<FilePenLine size={17} />} label={t.nav.drafts} count={8} />
+          <NavItem icon={<Send size={17} />} label={t.nav.sent} />
+          <NavItem icon={<Mail size={17} />} label={t.nav.allMail} />
+          <NavItem icon={<Shield size={17} />} label={t.nav.spam} />
+          <NavItem icon={<Trash2 size={17} />} label={t.nav.trash} />
         </nav>
 
         <div className="sidebar-group">
-          <p>Automation</p>
-          <NavItem icon={<Settings size={17} />} label="Rules" />
-          <NavItem icon={<PenLine size={17} />} label="Signatures" />
-          <NavItem icon={<Settings size={17} />} label="Settings" />
+          <p>{t.sections.automation}</p>
+          <NavItem icon={<Settings size={17} />} label={t.nav.rules} />
+          <NavItem icon={<PenLine size={17} />} label={t.nav.signatures} />
+          <NavItem icon={<Settings size={17} />} label={t.nav.settings} />
         </div>
 
         <div className="sidebar-group integrations">
-          <p>Integrations</p>
-          <IntegrationRow icon={<AtSign size={16} />} label="Gmail" />
-          <IntegrationRow icon={<Sparkles size={16} />} label="OpenAI" />
-          <IntegrationRow icon={<Archive size={16} />} label="Google Sheets" />
+          <p>{t.sections.integrations}</p>
+          <IntegrationRow icon={<AtSign size={16} />} label="Gmail" status={t.connected} />
+          <IntegrationRow icon={<Sparkles size={16} />} label="OpenAI" status={t.connected} />
+          <IntegrationRow icon={<Archive size={16} />} label="Google Sheets" status={t.connected} />
         </div>
 
         <div className="mode-box">
-          <p>Mode</p>
+          <p>{t.sections.mode}</p>
           <button>
-            Draft-first (review required)
+            {t.draftFirstMode}
             <ChevronDown size={15} />
           </button>
+        </div>
+
+        <div className="settings-box">
+          <p>{t.sections.settings}</p>
+          <label className="language-select">
+            <span>{t.language}</span>
+            <select
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as Language)}
+            >
+              <option value="en">{t.languageName.en}</option>
+              <option value="es">{t.languageName.es}</option>
+            </select>
+          </label>
         </div>
       </aside>
 
@@ -379,10 +706,10 @@ function AutoInboxApp() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search emails..."
+              placeholder={t.searchPlaceholder}
             />
           </label>
-          <button className="square-button" title="Filter">
+          <button className="square-button" title={t.filter}>
             <Filter size={17} />
           </button>
         </div>
@@ -394,7 +721,7 @@ function AutoInboxApp() {
               className={activeFolder === folder ? "active" : ""}
               onClick={() => setActiveFolder(folder)}
             >
-              {folder}
+              {t.folders[folder]}
               <span>{folderCounts[folder]}</span>
             </button>
           ))}
@@ -411,7 +738,7 @@ function AutoInboxApp() {
               <div className="mail-card-content">
                 <div className="mail-card-top">
                   <strong>{mail.sender}</strong>
-                  <span>{mail.time}</span>
+                  <span>{t.time[mail.timeKey]}</span>
                 </div>
                 <h3>{mail.subject}</h3>
                 <p>{mail.preview}</p>
@@ -424,29 +751,29 @@ function AutoInboxApp() {
 
       <section className="reader-column">
         <div className="reader-toolbar">
-          <button title="Back">
+          <button title={t.toolbar.back}>
             <ArrowLeft size={19} />
           </button>
           <div>
-            <button title="Archive">
+            <button title={t.toolbar.archive}>
               <Archive size={17} />
             </button>
-            <button title="Info">
+            <button title={t.toolbar.info}>
               <Info size={17} />
             </button>
-            <button title="Snooze">
+            <button title={t.toolbar.snooze}>
               <Clock3 size={17} />
             </button>
-            <button title="Trash">
+            <button title={t.toolbar.trash}>
               <Trash2 size={17} />
             </button>
-            <button title="Mark unread">
+            <button title={t.toolbar.markUnread}>
               <Mail size={17} />
             </button>
-            <button title="Tag">
+            <button title={t.toolbar.tag}>
               <Tag size={17} />
             </button>
-            <button title="More">
+            <button title={t.toolbar.more}>
               <MoreVertical size={17} />
             </button>
           </div>
@@ -460,27 +787,27 @@ function AutoInboxApp() {
             <div>
               <strong>{selected.sender}</strong>
               <span>
-                {selected.email} to support@yourstore.com
+                {selected.email} {t.to} support@yourstore.com
               </span>
             </div>
-            <time>{selected.time}</time>
-            <button title="Reply">
+            <time>{t.time[selected.timeKey]}</time>
+            <button title={t.toolbar.reply}>
               <Reply size={17} />
             </button>
-            <button title="More">
+            <button title={t.toolbar.more}>
               <MoreVertical size={17} />
             </button>
           </div>
 
           <div className="ai-chips">
             <span>
-              Intent <strong>{selected.intent}</strong>
+              {t.chips.intent} <strong>{selectedIntent}</strong>
             </span>
             <span>
-              Confidence <strong>{selected.confidence}%</strong>
+              {t.chips.confidence} <strong>{selected.confidence}%</strong>
             </span>
             <span className={`status-chip ${selectedSent ? "sent" : selected.status}`}>
-              {selectedSent ? "Sent" : statusLabel[selected.status]}
+              {selectedSent ? t.status.sent : t.status[selected.status]}
             </span>
           </div>
 
@@ -493,20 +820,20 @@ function AutoInboxApp() {
 
         <section className="knowledge-card">
           <div className="section-heading">
-            <h2>FAQ / Knowledge base matches</h2>
+            <h2>{t.sections.knowledge}</h2>
           </div>
-          <div className="knowledge-table" role="table" aria-label="FAQ matches">
+          <div className="knowledge-table" role="table" aria-label={t.sections.knowledge}>
             <div className="knowledge-row header" role="row">
-              <span>Question</span>
-              <span>Answer</span>
-              <span>Source</span>
+              <span>{t.table.question}</span>
+              <span>{t.table.answer}</span>
+              <span>{t.table.source}</span>
             </div>
-            {knowledgeMatches.map((match) => (
+            {content.knowledgeMatches.map((match) => (
               <div className="knowledge-row" role="row" key={match.question}>
                 <span>{match.question}</span>
                 <span>{match.answer}</span>
                 <span>
-                  {match.source}
+                  {t.sources[match.sourceKey]}
                   <Link size={13} />
                 </span>
               </div>
@@ -515,11 +842,11 @@ function AutoInboxApp() {
         </section>
 
         <section className="customer-history">
-          <h2>Customer history</h2>
+          <h2>{t.sections.customerHistory}</h2>
           <div className="history-grid">
-            <Metric label="Total conversations" value={String(selected.history.conversations)} />
-            <Metric label="Last contact" value={selected.history.lastContact} />
-            <Metric label="Satisfaction" value={selected.history.satisfaction} positive />
+            <Metric label={t.metrics.totalConversations} value={String(selected.history.conversations)} />
+            <Metric label={t.metrics.lastContact} value={t.lastContact[selected.history.lastContactKey]} />
+            <Metric label={t.metrics.satisfaction} value={t.satisfaction[selected.history.satisfactionKey]} positive />
           </div>
         </section>
       </section>
@@ -529,48 +856,48 @@ function AutoInboxApp() {
           <div className="reply-heading">
             <h2>
               <Bot size={18} />
-              AI suggested reply
+              {t.sections.suggestedReply}
             </h2>
             <button>
               <PenLine size={15} />
-              Draft
+              {t.draft}
             </button>
           </div>
 
-          <div className="format-toolbar" aria-label="Formatting toolbar">
-            <button title="Undo">
+          <div className="format-toolbar" aria-label={t.formattingToolbar}>
+            <button title={t.toolbar.undo}>
               <Undo2 size={16} />
             </button>
-            <button title="Regenerate">
+            <button title={t.toolbar.regenerate}>
               <RotateCcw size={16} />
             </button>
             <span />
-            <button title="Bold">
+            <button title={t.toolbar.bold}>
               <Bold size={16} />
             </button>
-            <button title="Italic">
+            <button title={t.toolbar.italic}>
               <Italic size={16} />
             </button>
-            <button title="Bulleted list">
+            <button title={t.toolbar.bulletedList}>
               <List size={16} />
             </button>
-            <button title="Link">
+            <button title={t.toolbar.link}>
               <Link size={16} />
             </button>
           </div>
 
           <textarea
-            value={draftText}
+            value={draftText || t.noDraft}
             onChange={(event) =>
               setDrafts((current) => ({ ...current, [selected.id]: event.target.value }))
             }
-            aria-label="Generated reply"
+            aria-label={t.generatedReply}
           />
 
           <div className="send-actions">
             <button className="secondary-button">
               <RefreshCcw size={16} />
-              Regenerate
+              {t.regenerate}
               <ChevronDown size={15} />
             </button>
             <button
@@ -579,36 +906,36 @@ function AutoInboxApp() {
               disabled={!draftText.trim() || selectedSent || queuePaused}
             >
               <Send size={18} />
-              {selectedSent ? "Sent" : "Enviar"}
+              {selectedSent ? t.sentAction : t.send}
               <ChevronDown size={15} />
             </button>
           </div>
 
-          <p className="draft-note">Draft-first mode - You review and send manually.</p>
+          <p className="draft-note">{t.draftNote}</p>
         </section>
 
         <section className="automation-card">
           <div className="section-heading">
-            <h2>Automation</h2>
+            <h2>{t.sections.automation}</h2>
             <span className={`running-pill ${queuePaused ? "paused" : ""}`}>
-              {queuePaused ? "Paused" : "Running"}
+              {queuePaused ? t.paused : t.running}
             </span>
           </div>
           <div className="automation-grid">
-            <Metric label="Next check in" value={queuePaused ? "--" : "2 min"} />
-            <Metric label="Processed today" value="48" />
+            <Metric label={t.metrics.nextCheckIn} value={queuePaused ? "--" : t.minuteValue} />
+            <Metric label={t.metrics.processedToday} value="48" />
           </div>
         </section>
 
         <section className="activity-card">
           <div className="section-heading">
-            <h2>Activity log</h2>
-            <button>View all</button>
+            <h2>{t.sections.activityLog}</h2>
+            <button>{t.viewAll}</button>
           </div>
           <div className="activity-list">
-            {activityItems.map((item) => (
+            {content.activityItems.map((item) => (
               <div key={item}>
-                <time>10:24 AM</time>
+                <time>{t.time.tenTwentyFour}</time>
                 <span>{item}</span>
               </div>
             ))}
@@ -639,7 +966,15 @@ function NavItem({
   );
 }
 
-function IntegrationRow({ icon, label }: { icon: React.ReactNode; label: string }) {
+function IntegrationRow({
+  icon,
+  label,
+  status,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  status: string;
+}) {
   return (
     <div className="integration-row">
       <span>
@@ -648,7 +983,7 @@ function IntegrationRow({ icon, label }: { icon: React.ReactNode; label: string 
       </span>
       <strong>
         <Check size={12} />
-        Connected
+        {status}
       </strong>
     </div>
   );

@@ -31,6 +31,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -59,6 +60,7 @@ button {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: auto;
   padding: 24px 20px;
   color: #d8e4eb;
   background:
@@ -115,7 +117,8 @@ button {
 }
 
 .sidebar-group p,
-.mode-box p {
+.mode-box p,
+.settings-box p {
   margin: 0 0 8px;
   color: #7f95a5;
   font-size: 12px;
@@ -203,7 +206,12 @@ button {
   display: none;
 }
 
-.mode-box button {
+.mode-box {
+  margin-bottom: 14px;
+}
+
+.mode-box button,
+.language-select {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -214,6 +222,35 @@ button {
   color: #dce7ee;
   background: rgba(255, 255, 255, 0.12);
   font-size: 13px;
+}
+
+.settings-box {
+  display: grid;
+  gap: 8px;
+}
+
+.language-select {
+  gap: 10px;
+}
+
+.language-select span {
+  color: #dce7ee;
+  font-weight: 700;
+}
+
+.language-select select {
+  min-width: 108px;
+  border: 0;
+  outline: 0;
+  color: #eef8fb;
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.language-select option {
+  color: #111827;
+  background: #ffffff;
 }
 
 .inbox-column,
