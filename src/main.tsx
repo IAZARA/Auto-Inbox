@@ -160,11 +160,18 @@ const copy = {
       connect: "Connect Gmail",
       syncNow: "Sync now",
       disconnect: "Disconnect",
+      autoSync: "Auto-sync",
+      checkEvery: "Check every",
       account: "Account",
       lastSync: "Last sync",
       historyId: "History ID",
       loadedMessages: "Loaded messages",
+      newMessages: "New emails",
+      duplicatesSkipped: "Duplicates skipped",
+      seenMessages: "Seen IDs",
       nextCheck: "Next check",
+      pausedByQueue: "Paused",
+      duplicateGuard: "Duplicate guard",
       scopes: "Scopes",
       neverSynced: "Not synced yet",
       noAccount: "No account",
@@ -353,11 +360,18 @@ const copy = {
       connect: "Conectar Gmail",
       syncNow: "Sincronizar",
       disconnect: "Desconectar",
+      autoSync: "Sincronizaci\u00f3n autom\u00e1tica",
+      checkEvery: "Revisar cada",
       account: "Cuenta",
       lastSync: "\u00daltima sincronizaci\u00f3n",
       historyId: "ID de historial",
       loadedMessages: "Mensajes cargados",
+      newMessages: "Emails nuevos",
+      duplicatesSkipped: "Duplicados omitidos",
+      seenMessages: "IDs vistos",
       nextCheck: "Pr\u00f3xima revisi\u00f3n",
+      pausedByQueue: "Pausado",
+      duplicateGuard: "Control de duplicados",
       scopes: "Permisos",
       neverSynced: "A\u00fan sin sincronizar",
       noAccount: "Sin cuenta",
@@ -766,14 +780,25 @@ const initialDrafts = Object.fromEntries(mails.map((mail) => [mail.id, mail.answ
   string
 >;
 
+const heartbeatIntervals = [30, 60, 120, 300, 900] as const;
+const defaultHeartbeatIntervalSeconds = 120;
+const gmailHeartbeatStorageKey = "auto-inbox:gmail-heartbeat";
+const maxSeenMessageIds = 500;
+
 const initialGmailSync: GmailSyncSnapshot = {
   status: "disconnected",
   mode: "demo-bridge",
   accountEmail: "",
   lastSyncAt: "",
-  nextSyncInSeconds: 90,
+  nextSyncInSeconds: defaultHeartbeatIntervalSeconds,
+  nextSyncAt: "",
+  heartbeatEnabled: true,
+  heartbeatIntervalSeconds: defaultHeartbeatIntervalSeconds,
   historyId: "",
   loadedMessages: 0,
+  newMessages: 0,
+  duplicateSkips: 0,
+  seenMessageIds: [],
 };
 
 const initialSheetsSync: SheetsSyncSnapshot = {
@@ -796,9 +821,13 @@ function AutoInboxApp() {
   const [queuePaused, setQueuePaused] = React.useState(false);
   const [sentIds, setSentIds] = React.useState<number[]>([7]);
   const [drafts, setDrafts] = React.useState<Record<number, string>>(initialDrafts);
-  const [gmailSync, setGmailSync] = React.useState<GmailSyncSnapshot>(initialGmailSync);
+  const [gmailSync, setGmailSync] = React.useState<GmailSyncSnapshot>(() => ({
+    ...initialGmailSync,
+    ...loadPersistedGmailHeartbeat(),
+  }));
   const [sheetsSync, setSheetsSync] = React.useState<SheetsSyncSnapshot>(initialSheetsSync);
   const [sheetInput, setSheetInput] = React.useState("demo-auto-inbox-sheet");
+  const [, setClockNow] = React.useState(() => Date.now());
 
   const t = copy[language];
   const content = localizedContent[language];
@@ -815,6 +844,14 @@ function AutoInboxApp() {
         minute: "2-digit",
       }).format(new Date(gmailSync.lastSyncAt))
     : t.gmail.neverSynced;
+  const nextHeartbeatLabel =
+    queuePaused && gmailSync.heartbeatEnabled
+      ? t.gmail.pausedByQueue
+      : gmailSync.nextSyncAt && gmailSync.status === "connected" && gmailSync.heartbeatEnabled
+        ? formatSeconds(
+            Math.max(0, Math.ceil((new Date(gmailSync.nextSyncAt).getTime() - Date.now()) / 1000)),
+          )
+        : formatSeconds(gmailSync.heartbeatIntervalSeconds);
   const sheetsBridgeAvailable = hasDesktopSheetsBridge();
   const sheetsIntegrationTone = getSheetsIntegrationTone(sheetsSync.status);
   const sheetsModeLabel = t.sheets.mode[sheetsSync.mode];
@@ -846,8 +883,15 @@ function AutoInboxApp() {
         accountEmail: status.accountEmail ?? current.accountEmail,
         lastSyncAt: status.lastSyncAt ?? current.lastSyncAt,
         nextSyncInSeconds: status.nextSyncInSeconds ?? current.nextSyncInSeconds,
+        nextSyncAt: status.nextSyncAt ?? current.nextSyncAt,
+        heartbeatEnabled: status.heartbeatEnabled ?? current.heartbeatEnabled,
+        heartbeatIntervalSeconds:
+          status.heartbeatIntervalSeconds ?? current.heartbeatIntervalSeconds,
         historyId: status.historyId ?? current.historyId,
         loadedMessages: status.loadedMessages ?? current.loadedMessages,
+        newMessages: status.newMessages ?? current.newMessages,
+        duplicateSkips: status.duplicateSkips ?? current.duplicateSkips,
+        seenMessageIds: status.seenMessageIds ?? current.seenMessageIds,
       }));
     });
 
@@ -855,6 +899,24 @@ function AutoInboxApp() {
       mounted = false;
     };
   }, [gmailBridgeAvailable]);
+
+  React.useEffect(() => {
+    persistGmailHeartbeat(gmailSync);
+  }, [
+    gmailSync.heartbeatEnabled,
+    gmailSync.heartbeatIntervalSeconds,
+    gmailSync.nextSyncAt,
+    gmailSync.seenMessageIds,
+    gmailSync.duplicateSkips,
+    gmailSync.newMessages,
+  ]);
+
+  React.useEffect(() => {
+    if (!gmailSync.heartbeatEnabled || gmailSync.status !== "connected") return;
+
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [gmailSync.heartbeatEnabled, gmailSync.status]);
 
   React.useEffect(() => {
     let mounted = true;
@@ -914,15 +976,17 @@ function AutoInboxApp() {
 
     try {
       const session = await connectGmailOAuth();
-      setGmailSync({
+      setGmailSync((current) => ({
+        ...current,
         status: "connected",
         mode: session.mode,
         accountEmail: session.accountEmail,
         lastSyncAt: new Date().toISOString(),
-        nextSyncInSeconds: 90,
+        nextSyncInSeconds: current.heartbeatIntervalSeconds,
+        nextSyncAt: getNextSyncAt(current.heartbeatIntervalSeconds),
         historyId: session.historyId ?? "",
-        loadedMessages: mails.length,
-      });
+        loadedMessages: Math.max(current.loadedMessages, mails.length),
+      }));
     } catch {
       setGmailSync((current) => ({ ...current, status: "error" }));
     }
@@ -943,13 +1007,17 @@ function AutoInboxApp() {
             (total, item) => total + (item.messagesAdded?.length ?? 0),
             0,
           ) ?? 0;
+        const messageIds =
+          history.history?.flatMap((item) =>
+            item.messagesAdded?.map((message) => message.message.id) ?? [],
+          ) ?? [];
 
         setGmailSync((current) => ({
-          ...current,
-          status: "connected",
-          lastSyncAt: new Date().toISOString(),
-          historyId: history.historyId ?? current.historyId,
-          loadedMessages: current.loadedMessages + messageCount,
+          ...applyGmailDeduplication(current, {
+            historyId: history.historyId ?? current.historyId,
+            messageIds,
+            fallbackNewMessages: messageCount,
+          }),
         }));
         return;
       }
@@ -957,22 +1025,24 @@ function AutoInboxApp() {
       if (accessToken) {
         const messages = await listInboxMessages(accessToken, 10);
         setGmailSync((current) => ({
-          ...current,
-          status: "connected",
-          lastSyncAt: new Date().toISOString(),
-          historyId: messages[0]?.historyId ?? current.historyId,
-          loadedMessages: messages.length,
+          ...applyGmailDeduplication(current, {
+            historyId: messages[0]?.historyId ?? current.historyId,
+            messageIds: messages.map((message) => message.id),
+          }),
         }));
         return;
       }
 
-      const snapshot = await simulateInboxSync(previous.historyId, previous.loadedMessages);
+      const snapshot = await simulateInboxSync(
+        previous.historyId,
+        previous.loadedMessages,
+        previous.seenMessageIds,
+      );
       setGmailSync((current) => ({
-        ...current,
-        status: "connected",
-        lastSyncAt: new Date().toISOString(),
-        historyId: snapshot.historyId,
-        loadedMessages: snapshot.loadedMessages,
+        ...applyGmailDeduplication(current, {
+          historyId: snapshot.historyId,
+          messageIds: snapshot.messageIds,
+        }),
       }));
     } catch {
       setGmailSync((current) => ({ ...current, status: "error" }));
@@ -985,10 +1055,38 @@ function AutoInboxApp() {
 
     try {
       await disconnectGmailOAuth();
-      setGmailSync(initialGmailSync);
+      setGmailSync((current) => ({
+        ...initialGmailSync,
+        heartbeatEnabled: current.heartbeatEnabled,
+        heartbeatIntervalSeconds: current.heartbeatIntervalSeconds,
+        nextSyncInSeconds: current.heartbeatIntervalSeconds,
+      }));
     } catch {
       setGmailSync((current) => ({ ...current, status: "error" }));
     }
+  };
+
+  const updateGmailHeartbeatEnabled = (enabled: boolean) => {
+    setGmailSync((current) => ({
+      ...current,
+      heartbeatEnabled: enabled,
+      nextSyncAt:
+        enabled && current.status === "connected"
+          ? getNextSyncAt(current.heartbeatIntervalSeconds)
+          : "",
+    }));
+  };
+
+  const updateGmailHeartbeatInterval = (intervalSeconds: number) => {
+    setGmailSync((current) => ({
+      ...current,
+      heartbeatIntervalSeconds: intervalSeconds,
+      nextSyncInSeconds: intervalSeconds,
+      nextSyncAt:
+        current.heartbeatEnabled && current.status === "connected"
+          ? getNextSyncAt(intervalSeconds)
+          : "",
+    }));
   };
 
   const connectGoogleSheets = async () => {
@@ -1076,6 +1174,33 @@ function AutoInboxApp() {
       setSheetsSync((current) => ({ ...current, status: "error" }));
     }
   };
+
+  React.useEffect(() => {
+    if (!gmailSync.heartbeatEnabled || queuePaused || gmailSync.status !== "connected") return;
+
+    if (!gmailSync.nextSyncAt) {
+      setGmailSync((current) => ({
+        ...current,
+        nextSyncAt: getNextSyncAt(current.heartbeatIntervalSeconds),
+      }));
+      return;
+    }
+
+    const delayMs = Math.max(1000, new Date(gmailSync.nextSyncAt).getTime() - Date.now());
+    const timer = window.setTimeout(() => {
+      void syncGmail();
+    }, delayMs);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    gmailSync.heartbeatEnabled,
+    gmailSync.heartbeatIntervalSeconds,
+    gmailSync.status,
+    gmailSync.nextSyncAt,
+    gmailSync.historyId,
+    gmailSync.seenMessageIds.length,
+    queuePaused,
+  ]);
 
   return (
     <main className="app-frame">
@@ -1417,12 +1542,41 @@ function AutoInboxApp() {
             </button>
           </div>
 
+          <div className="heartbeat-controls">
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={gmailSync.heartbeatEnabled}
+                onChange={(event) => updateGmailHeartbeatEnabled(event.target.checked)}
+              />
+              <span>{t.gmail.autoSync}</span>
+            </label>
+            <label className="interval-select">
+              <span>{t.gmail.checkEvery}</span>
+              <select
+                value={gmailSync.heartbeatIntervalSeconds}
+                onChange={(event) =>
+                  updateGmailHeartbeatInterval(Number.parseInt(event.target.value, 10))
+                }
+              >
+                {heartbeatIntervals.map((seconds) => (
+                  <option value={seconds} key={seconds}>
+                    {formatSeconds(seconds)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
           <div className="gmail-grid">
             <Metric label={t.gmail.account} value={gmailSync.accountEmail || t.gmail.noAccount} />
             <Metric label={t.gmail.lastSync} value={lastSyncLabel} />
-            <Metric label={t.gmail.nextCheck} value={`${gmailSync.nextSyncInSeconds}s`} />
+            <Metric label={t.gmail.nextCheck} value={nextHeartbeatLabel} />
             <Metric label={t.gmail.historyId} value={gmailSync.historyId || t.gmail.noHistory} />
             <Metric label={t.gmail.loadedMessages} value={String(gmailSync.loadedMessages)} />
+            <Metric label={t.gmail.newMessages} value={String(gmailSync.newMessages)} />
+            <Metric label={t.gmail.duplicatesSkipped} value={String(gmailSync.duplicateSkips)} />
+            <Metric label={t.gmail.seenMessages} value={String(gmailSync.seenMessageIds.length)} />
             <Metric label={t.sections.mode} value={gmailModeLabel} />
           </div>
 
@@ -1635,6 +1789,91 @@ function getSheetsIntegrationTone(status: SheetsConnectionStatus): IntegrationTo
   if (status === "connecting" || status === "syncing") return "syncing";
   if (status === "error") return "error";
   return "idle";
+}
+
+function applyGmailDeduplication(
+  current: GmailSyncSnapshot,
+  result: { historyId: string; messageIds: string[]; fallbackNewMessages?: number },
+): GmailSyncSnapshot {
+  const uniqueIncoming = Array.from(new Set(result.messageIds.filter(Boolean)));
+  const seen = new Set(current.seenMessageIds);
+  const newIds = uniqueIncoming.filter((id) => !seen.has(id));
+  const duplicateCount = Math.max(0, uniqueIncoming.length - newIds.length);
+  const fallbackNewMessages =
+    uniqueIncoming.length === 0 ? Math.max(0, result.fallbackNewMessages ?? 0) : 0;
+  const countedNewMessages = newIds.length + fallbackNewMessages;
+  const nextSeenMessageIds = [...newIds, ...current.seenMessageIds].slice(0, maxSeenMessageIds);
+
+  return {
+    ...current,
+    status: "connected",
+    lastSyncAt: new Date().toISOString(),
+    nextSyncInSeconds: current.heartbeatIntervalSeconds,
+    nextSyncAt: current.heartbeatEnabled ? getNextSyncAt(current.heartbeatIntervalSeconds) : "",
+    historyId: result.historyId,
+    loadedMessages: current.loadedMessages + countedNewMessages,
+    newMessages: current.newMessages + countedNewMessages,
+    duplicateSkips: current.duplicateSkips + duplicateCount,
+    seenMessageIds: nextSeenMessageIds,
+  };
+}
+
+function getNextSyncAt(intervalSeconds: number) {
+  return new Date(Date.now() + intervalSeconds * 1000).toISOString();
+}
+
+function formatSeconds(seconds: number) {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds % 60 === 0) return `${seconds / 60}m`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function loadPersistedGmailHeartbeat(): Partial<GmailSyncSnapshot> {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const rawValue = window.localStorage.getItem(gmailHeartbeatStorageKey);
+    if (!rawValue) return {};
+
+    const parsed = JSON.parse(rawValue) as Partial<GmailSyncSnapshot>;
+    const intervalSeconds = normalizeHeartbeatInterval(parsed.heartbeatIntervalSeconds);
+
+    return {
+      heartbeatEnabled: parsed.heartbeatEnabled ?? true,
+      heartbeatIntervalSeconds: intervalSeconds,
+      nextSyncInSeconds: intervalSeconds,
+      seenMessageIds: Array.isArray(parsed.seenMessageIds)
+        ? parsed.seenMessageIds.slice(0, maxSeenMessageIds)
+        : [],
+      duplicateSkips: parsed.duplicateSkips ?? 0,
+      newMessages: parsed.newMessages ?? 0,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function persistGmailHeartbeat(snapshot: GmailSyncSnapshot) {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.setItem(
+    gmailHeartbeatStorageKey,
+    JSON.stringify({
+      heartbeatEnabled: snapshot.heartbeatEnabled,
+      heartbeatIntervalSeconds: snapshot.heartbeatIntervalSeconds,
+      nextSyncAt: snapshot.nextSyncAt,
+      seenMessageIds: snapshot.seenMessageIds.slice(0, maxSeenMessageIds),
+      duplicateSkips: snapshot.duplicateSkips,
+      newMessages: snapshot.newMessages,
+    }),
+  );
+}
+
+function normalizeHeartbeatInterval(value?: number) {
+  if (!value || !Number.isFinite(value)) return defaultHeartbeatIntervalSeconds;
+  return heartbeatIntervals.includes(value as (typeof heartbeatIntervals)[number])
+    ? value
+    : defaultHeartbeatIntervalSeconds;
 }
 
 function Avatar({ initials, accent }: { initials: string; accent: string }) {

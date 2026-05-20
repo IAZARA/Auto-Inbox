@@ -917,6 +917,53 @@ button {
   font-size: 13px;
 }
 
+.heartbeat-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(128px, 0.55fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.toggle-row,
+.interval-select {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  gap: 9px;
+  border: 1px solid #dfe6eb;
+  border-radius: 7px;
+  padding: 0 11px;
+  color: #374151;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.toggle-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: #059aa6;
+}
+
+.interval-select {
+  justify-content: space-between;
+}
+
+.interval-select span {
+  color: #7a8794;
+  font-size: 12px;
+}
+
+.interval-select select {
+  min-width: 64px;
+  border: 0;
+  outline: 0;
+  color: #111827;
+  background: transparent;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .sheet-input {
   display: grid;
   gap: 7px;
@@ -1163,6 +1210,7 @@ button {
   .history-grid,
   .automation-grid,
   .gmail-actions,
+  .heartbeat-controls,
   .sheets-actions,
   .gmail-grid,
   .send-actions {

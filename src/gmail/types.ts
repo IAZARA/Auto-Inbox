@@ -28,8 +28,14 @@ export type GmailSyncSnapshot = {
   accountEmail: string;
   lastSyncAt: string;
   nextSyncInSeconds: number;
+  nextSyncAt: string;
+  heartbeatEnabled: boolean;
+  heartbeatIntervalSeconds: number;
   historyId: string;
   loadedMessages: number;
+  newMessages: number;
+  duplicateSkips: number;
+  seenMessageIds: string[];
   error?: string;
 };
 

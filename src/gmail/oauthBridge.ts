@@ -56,17 +56,24 @@ export async function getDesktopGmailStatus(): Promise<Partial<GmailSyncSnapshot
   return window.autoInboxGmail.getStatus();
 }
 
-export async function simulateInboxSync(currentHistoryId: string, loadedMessages: number) {
+export async function simulateInboxSync(
+  currentHistoryId: string,
+  loadedMessages: number,
+  seenMessageIds: readonly string[] = [],
+) {
   await wait(520);
 
   const parsedHistoryId = Number.parseInt(currentHistoryId || DEMO_HISTORY_ID, 10);
   const nextHistoryId = Number.isNaN(parsedHistoryId)
     ? DEMO_HISTORY_ID
     : String(parsedHistoryId + 27);
+  const baseNumber = Math.max(loadedMessages, seenMessageIds.length);
+  const duplicateCandidate = seenMessageIds[0] ?? `demo-gmail-${Math.max(1, baseNumber)}`;
+  const candidateIds = [`demo-gmail-${baseNumber + 1}`, duplicateCandidate];
 
   return {
     historyId: nextHistoryId,
-    loadedMessages: Math.max(loadedMessages, 7),
+    messageIds: candidateIds,
   };
 }
 

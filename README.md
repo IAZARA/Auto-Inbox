@@ -23,6 +23,7 @@ The product direction is intentionally human-in-the-loop: AI prepares the respon
 - Email detail view with customer metadata, intent, confidence, FAQ matches, and history.
 - AI suggested reply composer with formatting controls, regenerate action, and manual `Enviar` button.
 - Desktop-ready Gmail OAuth connection panel with sync state, history ID tracking, and least-privilege scopes.
+- Configurable Gmail heartbeat for automatic inbox checks and duplicate skipping.
 - Google Sheets MVP integration for FAQ rows, automation rules, and activity logs.
 - Automation status panel and activity log for observability.
 - English and Spanish interface language toggle while keeping email content untouched.
@@ -75,6 +76,8 @@ Auto-inbox is prepared for the safest desktop path: Google OAuth 2.0 for install
 - The first production scopes are `gmail.readonly` and `gmail.compose`, avoiding full mailbox access unless the product truly needs it.
 - Initial sync can use `users.messages.list` and `users.messages.get`.
 - Incremental sync can persist the latest `historyId` and call `users.history.list`.
+- The UI includes a configurable heartbeat, currently 30 seconds to 15 minutes, so users choose how often Gmail is checked.
+- Auto-sync keeps a local `seenMessageIds` cache and skips duplicate message IDs before counting or processing new emails.
 - Sending should stay human-in-the-loop: generate a Gmail draft first, then let the user review and send.
 - Access and refresh tokens are encrypted with Electron `safeStorage` and kept outside frontend storage.
 
