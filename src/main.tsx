@@ -37,6 +37,7 @@ import { listInboxMessages, listNewInboxHistory } from "./gmail/gmailApi";
 import {
   connectGmailOAuth,
   disconnectGmailOAuth,
+  getDesktopGmailStatus,
   getGmailAccessToken,
   hasDesktopGmailBridge,
   simulateInboxSync,
@@ -715,6 +716,36 @@ function AutoInboxApp() {
         minute: "2-digit",
       }).format(new Date(gmailSync.lastSyncAt))
     : t.gmail.neverSynced;
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    if (!gmailBridgeAvailable) {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    void getDesktopGmailStatus().then((status) => {
+      if (!mounted || !status) return;
+
+      setGmailSync((current) => ({
+        ...current,
+        ...status,
+        mode: status.mode ?? "desktop-oauth",
+        status: status.status ?? current.status,
+        accountEmail: status.accountEmail ?? current.accountEmail,
+        lastSyncAt: status.lastSyncAt ?? current.lastSyncAt,
+        nextSyncInSeconds: status.nextSyncInSeconds ?? current.nextSyncInSeconds,
+        historyId: status.historyId ?? current.historyId,
+        loadedMessages: status.loadedMessages ?? current.loadedMessages,
+      }));
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [gmailBridgeAvailable]);
 
   const filtered = mails.filter((mail) => {
     const translatedIntent = t.intents[mail.intentKey];

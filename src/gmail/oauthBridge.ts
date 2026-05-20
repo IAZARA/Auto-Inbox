@@ -1,4 +1,5 @@
 import { GMAIL_SCOPES, type GmailDesktopBridge, type GmailOAuthSession } from "./types";
+import type { GmailSyncSnapshot } from "./types";
 
 declare global {
   interface Window {
@@ -45,6 +46,14 @@ export async function getGmailAccessToken() {
   }
 
   return window.autoInboxGmail.getAccessToken();
+}
+
+export async function getDesktopGmailStatus(): Promise<Partial<GmailSyncSnapshot> | null> {
+  if (!hasDesktopGmailBridge() || !window.autoInboxGmail?.getStatus) {
+    return null;
+  }
+
+  return window.autoInboxGmail.getStatus();
 }
 
 export async function simulateInboxSync(currentHistoryId: string, loadedMessages: number) {

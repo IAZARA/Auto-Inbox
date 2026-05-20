@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "description": "Open-source AI inbox assistant with human-in-the-loop reply review.",
   "type": "module",
+  "main": "dist-electron/main.cjs",
+  "author": "IAZARA",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -26,19 +28,53 @@
   ],
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "dev:web": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "dev:desktop": "concurrently -k \"npm:dev:web\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "tsc --noEmit && npm run build:electron && vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "preview": "vite preview --host 127.0.0.1",
+    "preview:desktop": "npm run build && electron .",
+    "dist:desktop": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win nsis --publish never"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^5.0.4",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@types/node": "^25.9.1",
     "@types/react": "^19.2.15",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^42.2.0",
+    "electron-builder": "^26.8.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "wait-on": "^9.0.10"
+  },
+  "build": {
+    "appId": "com.iazara.autoinbox",
+    "productName": "Auto-inbox",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "signAndEditExecutable": false,
+      "artifactName": "Auto-inbox-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

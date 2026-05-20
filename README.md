@@ -44,6 +44,20 @@ npm run dev
 
 Open the local URL printed by Vite.
 
+## Desktop Development
+
+Auto-inbox now includes an Electron shell for the future `.exe` build. In desktop mode, the React app receives a secure `window.autoInboxGmail` bridge from Electron instead of handling Google tokens directly.
+
+```bash
+npm run dev:desktop
+```
+
+For a Windows installer build:
+
+```bash
+npm run dist:desktop
+```
+
 ## Build
 
 ```bash
@@ -55,28 +69,38 @@ npm run build
 Auto-inbox is prepared for the safest desktop path: Google OAuth 2.0 for installed apps, Gmail API scopes, and secure token storage in the desktop shell.
 
 - The React UI calls a `window.autoInboxGmail` bridge when Tauri or Electron exposes it.
+- The Electron preload exposes that bridge through isolated IPC.
 - The browser build falls back to a demo bridge so the open-source app remains easy to run.
 - The first production scopes are `gmail.readonly` and `gmail.compose`, avoiding full mailbox access unless the product truly needs it.
 - Initial sync can use `users.messages.list` and `users.messages.get`.
 - Incremental sync can persist the latest `historyId` and call `users.history.list`.
 - Sending should stay human-in-the-loop: generate a Gmail draft first, then let the user review and send.
-- Access and refresh tokens should live in the OS keychain, not in frontend storage.
+- Access and refresh tokens are encrypted with Electron `safeStorage` and kept outside frontend storage.
+
+To test real Gmail OAuth locally, create a Google Cloud OAuth client for a desktop app and set:
+
+```bash
+GOOGLE_OAUTH_CLIENT_ID=your-client-id
+GOOGLE_OAUTH_CLIENT_SECRET=optional-client-secret
+```
+
+The app also reads a local `.env` file during desktop startup. The web-only Vite build still works without Gmail credentials.
 
 ## Product Roadmap
 
-- Tauri or Electron shell that implements the Google OAuth installed-app flow.
+- Settings UI for Gmail OAuth client configuration.
 - Google Sheets FAQ source and enquiry log.
 - OpenAI-powered classification and reply generation.
-- Gmail draft creation before sending.
+- Real Gmail draft creation before sending.
 - Safety rules for newsletters, billing, legal, and sensitive support cases.
-- Local encrypted settings storage.
-- Desktop packaging with Tauri or Electron.
+- Desktop installer polish, app icon, and signed releases.
 - Optional hosted SaaS mode for always-on automation.
 
 ## Project Structure
 
 ```text
 Auto-Inbox/
+  electron/                Electron shell, preload bridge, and Google OAuth flow
   docs/images/             README and GitHub assets
   src/gmail/               Gmail OAuth bridge, API helpers, and sync types
   src/main.tsx             Main React application
@@ -84,6 +108,7 @@ Auto-Inbox/
   .env.example             Future desktop OAuth configuration placeholders
   index.html               Vite entry
   package.json             Scripts and dependencies
+  tsconfig.electron.json   Electron TypeScript build config
 ```
 
 ## Philosophy
