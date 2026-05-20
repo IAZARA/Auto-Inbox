@@ -11,7 +11,7 @@ Auto-inbox is an open-source AI inbox assistant for teams that want faster custo
 
 ## Overview
 
-Auto-inbox turns the workflow of an AI email responder into a product-ready interface. The current version is a polished frontend prototype built for portfolio and open-source iteration. It uses realistic demo data so anyone can explore the experience without connecting Gmail, Google Sheets, or OpenAI credentials, and it already includes a desktop-ready Gmail OAuth bridge layer for the next Tauri or Electron step.
+Auto-inbox turns the workflow of an AI email responder into a product-ready interface. The current version is a polished frontend prototype built for portfolio and open-source iteration. It uses realistic demo data so anyone can explore the experience without connecting Gmail, Google Sheets, or OpenAI credentials, and it already includes desktop-ready Google OAuth bridge layers for Gmail and Sheets.
 
 The product direction is intentionally human-in-the-loop: AI prepares the response, but the user reviews and sends it manually.
 
@@ -23,6 +23,7 @@ The product direction is intentionally human-in-the-loop: AI prepares the respon
 - Email detail view with customer metadata, intent, confidence, FAQ matches, and history.
 - AI suggested reply composer with formatting controls, regenerate action, and manual `Enviar` button.
 - Desktop-ready Gmail OAuth connection panel with sync state, history ID tracking, and least-privilege scopes.
+- Google Sheets MVP integration for FAQ rows, automation rules, and activity logs.
 - Automation status panel and activity log for observability.
 - English and Spanish interface language toggle while keeping email content untouched.
 - Responsive layout with no horizontal overflow on mobile.
@@ -86,10 +87,30 @@ GOOGLE_OAUTH_CLIENT_SECRET=optional-client-secret
 
 The app also reads a local `.env` file during desktop startup. The web-only Vite build still works without Gmail credentials.
 
+## Google Sheets MVP
+
+The first Sheets integration is intentionally simple: paste a Google Sheet URL or spreadsheet ID inside the app. Auto-inbox expects these tabs:
+
+```text
+FAQ
+  enabled | intent | question | answer | tags | source | updated_at
+
+Rules
+  enabled | priority | match_text | intent | action | notes
+
+Activity
+  timestamp | email_id | sender | subject | intent | confidence | status | draft_created
+
+Settings
+  key | value
+```
+
+In desktop mode, the Electron bridge requests the `https://www.googleapis.com/auth/spreadsheets` scope, validates the selected spreadsheet, reads `FAQ` and `Rules`, and appends rows to `Activity`. In browser mode, the same UI uses demo data so contributors can work without Google credentials.
+
 ## Product Roadmap
 
 - Settings UI for Gmail OAuth client configuration.
-- Google Sheets FAQ source and enquiry log.
+- Google Picker support for choosing a spreadsheet without pasting an ID.
 - OpenAI-powered classification and reply generation.
 - Real Gmail draft creation before sending.
 - Safety rules for newsletters, billing, legal, and sensitive support cases.
@@ -103,6 +124,7 @@ Auto-Inbox/
   electron/                Electron shell, preload bridge, and Google OAuth flow
   docs/images/             README and GitHub assets
   src/gmail/               Gmail OAuth bridge, API helpers, and sync types
+  src/sheets/              Sheets API helpers, bridge, and MVP data mappers
   src/main.tsx             Main React application
   src/styles.css           Premium dashboard styling
   .env.example             Future desktop OAuth configuration placeholders

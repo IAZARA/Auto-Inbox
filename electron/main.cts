@@ -22,6 +22,59 @@ type GmailProfileResponse = {
   historyId?: string;
 };
 
+type SpreadsheetMetadataResponse = {
+  spreadsheetId: string;
+  properties?: {
+    title?: string;
+  };
+  sheets?: Array<{
+    properties?: {
+      title?: string;
+    };
+  }>;
+};
+
+type SheetActivityRow = {
+  timestamp: string;
+  emailId: string;
+  sender: string;
+  subject: string;
+  intent: string;
+  confidence: number;
+  status: string;
+  draftCreated: boolean;
+};
+
+type SheetsKnowledgeBase = {
+  faq: Array<{
+    enabled: boolean;
+    intent: string;
+    question: string;
+    answer: string;
+    tags: string[];
+    source: string;
+    updatedAt: string;
+  }>;
+  rules: Array<{
+    enabled: boolean;
+    priority: number;
+    matchText: string;
+    intent: string;
+    action: string;
+    notes: string;
+  }>;
+};
+
+type StoredSheetsConnection = {
+  spreadsheetId: string;
+  spreadsheetTitle: string;
+  tabs: string[];
+  faqRows: number;
+  ruleRows: number;
+  activityRows: number;
+  lastSyncAt: string;
+};
+
 type StoredGmailSession = {
   accountEmail: string;
   accessToken: string;
@@ -29,12 +82,14 @@ type StoredGmailSession = {
   expiresAt: number;
   grantedScopes: string[];
   historyId?: string;
+  sheets?: StoredSheetsConnection;
 };
 
 const defaultScopes = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.compose",
 ] as const;
+const sheetsScopes = ["https://www.googleapis.com/auth/spreadsheets"] as const;
 
 const googleAuthUrl = "https://accounts.google.com/o/oauth2/v2/auth";
 const googleTokenUrl = "https://oauth2.googleapis.com/token";
@@ -120,6 +175,53 @@ function registerGmailIpc() {
       loadedMessages: 0,
     };
   });
+
+  ipcMain.handle(
+    "sheets:connect",
+    async (
+      _event,
+      request?: { spreadsheetId?: string; scopes?: readonly string[] },
+    ) => connectSheets(request?.spreadsheetId ?? "", request?.scopes?.length ? request.scopes : sheetsScopes),
+  );
+
+  ipcMain.handle("sheets:disconnect", async () => {
+    const session = await loadStoredSession();
+    if (!session) return;
+    const nextSession = { ...session };
+    delete nextSession.sheets;
+    await saveSession(nextSession);
+  });
+
+  ipcMain.handle("sheets:get-status", async () => {
+    const session = await loadStoredSession();
+    if (!session?.sheets) {
+      return { status: "disconnected", mode: "desktop-oauth" };
+    }
+
+    return {
+      status: "connected",
+      mode: "desktop-oauth",
+      ...session.sheets,
+    };
+  });
+
+  ipcMain.handle(
+    "sheets:read-knowledge-base",
+    async (_event, request?: { spreadsheetId?: string }) => {
+      const spreadsheetId = await getSpreadsheetIdFromRequest(request?.spreadsheetId);
+      const accessToken = await requireValidAccessToken();
+      return readSheetsKnowledgeBase(accessToken, spreadsheetId);
+    },
+  );
+
+  ipcMain.handle(
+    "sheets:append-activity-log",
+    async (_event, request?: { spreadsheetId?: string; row?: SheetActivityRow }) => {
+      const spreadsheetId = await getSpreadsheetIdFromRequest(request?.spreadsheetId);
+      const accessToken = await requireValidAccessToken();
+      return appendSheetsActivity(accessToken, spreadsheetId, request?.row);
+    },
+  );
 }
 
 async function connectGmail(scopes: readonly string[]) {
@@ -138,6 +240,23 @@ async function connectGmail(scopes: readonly string[]) {
     }
   }
 
+  const token = await authorizeGoogle(scopes);
+  const profile = await fetchGmailProfile(token.access_token);
+  const session: StoredGmailSession = {
+    ...storedSession,
+    accountEmail: profile.emailAddress,
+    accessToken: token.access_token,
+    refreshToken: token.refresh_token ?? storedSession?.refreshToken,
+    expiresAt: Date.now() + token.expires_in * 1000,
+    grantedScopes: normalizeGrantedScopes(token.scope, scopes),
+    historyId: profile.historyId,
+  };
+
+  await saveSession(session);
+  return toOAuthSession(session);
+}
+
+async function authorizeGoogle(scopes: readonly string[]) {
   const clientId = getOAuthClientId();
   const clientSecret = getOAuthClientSecret();
   const { verifier, challenge } = createPkcePair();
@@ -159,28 +278,74 @@ async function connectGmail(scopes: readonly string[]) {
 
   try {
     const code = await callback.waitForCode();
-    const token = await exchangeAuthorizationCode({
+    return exchangeAuthorizationCode({
       clientId,
       clientSecret,
       code,
       codeVerifier: verifier,
       redirectUri: callback.redirectUri,
     });
-    const profile = await fetchGmailProfile(token.access_token);
-    const session: StoredGmailSession = {
-      accountEmail: profile.emailAddress,
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token,
-      expiresAt: Date.now() + token.expires_in * 1000,
-      grantedScopes: normalizeGrantedScopes(token.scope, scopes),
-      historyId: profile.historyId,
-    };
-
-    await saveSession(session);
-    return toOAuthSession(session);
   } finally {
     await callback.close();
   }
+}
+
+async function connectSheets(spreadsheetIdInput: string, scopes: readonly string[]) {
+  const spreadsheetId = extractSpreadsheetId(spreadsheetIdInput);
+  if (!spreadsheetId) {
+    throw new Error("Missing Google Sheets spreadsheet ID.");
+  }
+
+  const storedSession = await loadStoredSession();
+  const requestedScopes = mergeScopes(storedSession?.grantedScopes ?? [], scopes);
+
+  if (!storedSession || !hasScopes(storedSession, requestedScopes)) {
+    const token = await authorizeGoogle(requestedScopes);
+    const nextSession: StoredGmailSession = {
+      ...storedSession,
+      accountEmail: storedSession?.accountEmail ?? "",
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token ?? storedSession?.refreshToken,
+      expiresAt: Date.now() + token.expires_in * 1000,
+      grantedScopes: normalizeGrantedScopes(token.scope, requestedScopes),
+    };
+
+    await saveSession(nextSession);
+  }
+
+  const accessToken = await requireValidAccessToken();
+  const metadata = await fetchSpreadsheetMetadata(accessToken, spreadsheetId);
+  const knowledge = await readSheetsKnowledgeBase(accessToken, spreadsheetId).catch(() => ({
+    faq: [],
+    rules: [],
+  }));
+  const currentSession = await loadStoredSession();
+  if (!currentSession) {
+    throw new Error("Google OAuth session was not saved.");
+  }
+
+  const sheets: StoredSheetsConnection = {
+    spreadsheetId: metadata.spreadsheetId,
+    spreadsheetTitle: metadata.title,
+    tabs: metadata.tabs,
+    faqRows: knowledge.faq.length,
+    ruleRows: knowledge.rules.length,
+    activityRows: 0,
+    lastSyncAt: new Date().toISOString(),
+  };
+
+  const nextSession = {
+    ...currentSession,
+    sheets,
+  };
+
+  await saveSession(nextSession);
+
+  return {
+    status: "connected",
+    mode: "desktop-oauth",
+    ...sheets,
+  };
 }
 
 async function getValidAccessToken() {
@@ -281,6 +446,178 @@ async function fetchGmailProfile(accessToken: string): Promise<GmailProfileRespo
   }
 
   return response.json() as Promise<GmailProfileResponse>;
+}
+
+async function requireValidAccessToken() {
+  const accessToken = await getValidAccessToken();
+  if (!accessToken) {
+    throw new Error("Google OAuth is not connected.");
+  }
+
+  return accessToken;
+}
+
+async function fetchSpreadsheetMetadata(accessToken: string, spreadsheetId: string) {
+  const fields = "spreadsheetId,properties.title,sheets.properties.title";
+  const metadata = await sheetsFetch<SpreadsheetMetadataResponse>(
+    accessToken,
+    `/${encodeURIComponent(spreadsheetId)}?fields=${encodeURIComponent(fields)}`,
+  );
+
+  return {
+    spreadsheetId: metadata.spreadsheetId,
+    title: metadata.properties?.title ?? "Untitled spreadsheet",
+    tabs:
+      metadata.sheets
+        ?.map((sheet) => sheet.properties?.title)
+        .filter((title): title is string => Boolean(title)) ?? [],
+  };
+}
+
+async function readSheetsKnowledgeBase(
+  accessToken: string,
+  spreadsheetId: string,
+): Promise<SheetsKnowledgeBase> {
+  const params = new URLSearchParams();
+  params.append("ranges", "FAQ!A2:G");
+  params.append("ranges", "Rules!A2:F");
+
+  const response = await sheetsFetch<{ valueRanges?: Array<{ values?: string[][] }> }>(
+    accessToken,
+    `/${encodeURIComponent(spreadsheetId)}/values:batchGet?${params.toString()}`,
+  );
+
+  const [faqValues, ruleValues] = response.valueRanges ?? [];
+
+  return {
+    faq: mapFaqRows(faqValues?.values ?? []),
+    rules: mapRuleRows(ruleValues?.values ?? []),
+  };
+}
+
+async function appendSheetsActivity(
+  accessToken: string,
+  spreadsheetId: string,
+  row?: SheetActivityRow,
+) {
+  if (!row) {
+    throw new Error("Missing activity row.");
+  }
+
+  const params = new URLSearchParams({
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+  });
+
+  const response = await sheetsFetch<{ updates?: { updatedRange?: string; updatedRows?: number } }>(
+    accessToken,
+    `/${encodeURIComponent(spreadsheetId)}/values/Activity!A:H:append?${params.toString()}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        values: [
+          [
+            row.timestamp,
+            row.emailId,
+            row.sender,
+            row.subject,
+            row.intent,
+            row.confidence,
+            row.status,
+            row.draftCreated ? "yes" : "no",
+          ],
+        ],
+      }),
+    },
+  );
+
+  const session = await loadStoredSession();
+  if (session?.sheets?.spreadsheetId === spreadsheetId) {
+    await saveSession({
+      ...session,
+      sheets: {
+        ...session.sheets,
+        activityRows: session.sheets.activityRows + (response.updates?.updatedRows ?? 1),
+        lastSyncAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  return response.updates ?? {};
+}
+
+async function sheetsFetch<T>(
+  accessToken: string,
+  pathSuffix: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${pathSuffix}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      ...init.headers,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Google Sheets API request failed: ${await response.text()}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+function mapFaqRows(rows: string[][]): SheetsKnowledgeBase["faq"] {
+  return rows
+    .map(([enabled, intent, question, answer, tags, source, updatedAt]) => ({
+      enabled: normalizeBoolean(enabled),
+      intent: intent ?? "",
+      question: question ?? "",
+      answer: answer ?? "",
+      tags: (tags ?? "")
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+      source: source ?? "Google Sheets",
+      updatedAt: updatedAt ?? "",
+    }))
+    .filter((row) => row.enabled && row.question && row.answer);
+}
+
+function mapRuleRows(rows: string[][]): SheetsKnowledgeBase["rules"] {
+  return rows
+    .map(([enabled, priority, matchText, intent, action, notes]) => ({
+      enabled: normalizeBoolean(enabled),
+      priority: Number.parseInt(priority ?? "0", 10) || 0,
+      matchText: matchText ?? "",
+      intent: intent ?? "",
+      action: action ?? "",
+      notes: notes ?? "",
+    }))
+    .filter((row) => row.enabled && row.matchText);
+}
+
+async function getSpreadsheetIdFromRequest(spreadsheetId?: string) {
+  const session = await loadStoredSession();
+  const sessionSpreadsheetId = session?.sheets?.spreadsheetId;
+  const resolved = extractSpreadsheetId(spreadsheetId ?? sessionSpreadsheetId ?? "");
+  if (!resolved) {
+    throw new Error("Missing Google Sheets spreadsheet ID.");
+  }
+
+  return resolved;
+}
+
+function extractSpreadsheetId(value: string) {
+  const trimmed = value.trim();
+  const fromUrl = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  return fromUrl?.[1] ?? trimmed;
+}
+
+function normalizeBoolean(value?: string) {
+  return ["1", "true", "yes", "y", "si", "s\u00ed", "enabled", "active"].includes(
+    (value ?? "").trim().toLowerCase(),
+  );
 }
 
 async function createOAuthCallbackServer(expectedState: string) {
@@ -442,6 +779,10 @@ function base64Url(input: Buffer) {
 
 function normalizeGrantedScopes(grantedScope: string | undefined, fallback: readonly string[]) {
   return grantedScope ? grantedScope.split(" ").filter(Boolean) : [...fallback];
+}
+
+function mergeScopes(...scopeGroups: Array<readonly string[]>) {
+  return Array.from(new Set(scopeGroups.flat()));
 }
 
 function hasScopes(session: StoredGmailSession, scopes: readonly string[]) {

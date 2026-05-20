@@ -48,6 +48,23 @@ import {
   type GmailConnectionStatus,
   type GmailSyncSnapshot,
 } from "./gmail/types";
+import { extractSpreadsheetId } from "./sheets/sheetsApi";
+import {
+  appendSheetActivityLog,
+  connectSheets,
+  disconnectSheets,
+  getDesktopSheetsStatus,
+  hasDesktopSheetsBridge,
+  readSheetsKnowledgeBase,
+} from "./sheets/sheetsBridge";
+import {
+  AUTO_INBOX_SHEET_TABS,
+  SHEETS_SCOPES,
+  type SheetActivityRow,
+  type SheetsBridgeMode,
+  type SheetsConnectionStatus,
+  type SheetsSyncSnapshot,
+} from "./sheets/types";
 import "./styles.css";
 
 type Language = "en" | "es";
@@ -153,6 +170,40 @@ const copy = {
       noAccount: "No account",
       noHistory: "Waiting for first sync",
       errorHelp: "The Gmail connection needs attention. Try reconnecting.",
+      mode: {
+        "desktop-oauth": "Desktop OAuth",
+        "demo-bridge": "Demo bridge",
+      },
+      status: {
+        disconnected: "Disconnected",
+        connecting: "Connecting",
+        connected: "Connected",
+        syncing: "Syncing",
+        error: "Needs attention",
+      },
+    },
+    sheets: {
+      title: "Google Sheets",
+      description:
+        "MVP mode: paste a Google Sheet URL or spreadsheet ID to load FAQ, rules, and activity logs.",
+      desktopReady: "Desktop Sheets bridge detected",
+      demoReady: "Demo sheet active",
+      connect: "Connect sheet",
+      reload: "Reload FAQ",
+      logDemo: "Log selected email",
+      disconnect: "Disconnect",
+      spreadsheetId: "Spreadsheet ID",
+      spreadsheetPlaceholder: "Paste Google Sheet URL or ID",
+      spreadsheet: "Spreadsheet",
+      lastSync: "Last sync",
+      faqRows: "FAQ rows",
+      ruleRows: "Rule rows",
+      activityRows: "Activity rows",
+      expectedTabs: "Expected tabs",
+      scopes: "Scopes",
+      neverSynced: "Not synced yet",
+      noSpreadsheet: "No spreadsheet",
+      errorHelp: "Sheets could not connect. Check the spreadsheet ID and permissions.",
       mode: {
         "desktop-oauth": "Desktop OAuth",
         "demo-bridge": "Demo bridge",
@@ -312,6 +363,40 @@ const copy = {
       noAccount: "Sin cuenta",
       noHistory: "Esperando primera sincronizaci\u00f3n",
       errorHelp: "La conexi\u00f3n Gmail necesita atenci\u00f3n. Prob\u00e1 reconectar.",
+      mode: {
+        "desktop-oauth": "OAuth de escritorio",
+        "demo-bridge": "Bridge demo",
+      },
+      status: {
+        disconnected: "Desconectado",
+        connecting: "Conectando",
+        connected: "Conectado",
+        syncing: "Sincronizando",
+        error: "Revisar",
+      },
+    },
+    sheets: {
+      title: "Google Sheets",
+      description:
+        "Modo MVP: peg\u00e1 una URL de Google Sheet o un ID de spreadsheet para cargar FAQ, reglas y registros de actividad.",
+      desktopReady: "Bridge Sheets de escritorio detectado",
+      demoReady: "Sheet demo activo",
+      connect: "Conectar sheet",
+      reload: "Recargar FAQ",
+      logDemo: "Registrar email seleccionado",
+      disconnect: "Desconectar",
+      spreadsheetId: "ID del spreadsheet",
+      spreadsheetPlaceholder: "Peg\u00e1 la URL o ID de Google Sheet",
+      spreadsheet: "Spreadsheet",
+      lastSync: "\u00daltima sincronizaci\u00f3n",
+      faqRows: "Filas FAQ",
+      ruleRows: "Filas de reglas",
+      activityRows: "Registros",
+      expectedTabs: "Pesta\u00f1as esperadas",
+      scopes: "Permisos",
+      neverSynced: "A\u00fan sin sincronizar",
+      noSpreadsheet: "Sin spreadsheet",
+      errorHelp: "No se pudo conectar Sheets. Revis\u00e1 el ID y los permisos.",
       mode: {
         "desktop-oauth": "OAuth de escritorio",
         "demo-bridge": "Bridge demo",
@@ -691,6 +776,18 @@ const initialGmailSync: GmailSyncSnapshot = {
   loadedMessages: 0,
 };
 
+const initialSheetsSync: SheetsSyncSnapshot = {
+  status: "disconnected",
+  mode: "demo-bridge",
+  spreadsheetId: "",
+  spreadsheetTitle: "",
+  lastSyncAt: "",
+  faqRows: 0,
+  ruleRows: 0,
+  activityRows: 0,
+  tabs: [],
+};
+
 function AutoInboxApp() {
   const [language, setLanguage] = React.useState<Language>("en");
   const [selectedId, setSelectedId] = React.useState(1);
@@ -700,6 +797,8 @@ function AutoInboxApp() {
   const [sentIds, setSentIds] = React.useState<number[]>([7]);
   const [drafts, setDrafts] = React.useState<Record<number, string>>(initialDrafts);
   const [gmailSync, setGmailSync] = React.useState<GmailSyncSnapshot>(initialGmailSync);
+  const [sheetsSync, setSheetsSync] = React.useState<SheetsSyncSnapshot>(initialSheetsSync);
+  const [sheetInput, setSheetInput] = React.useState("demo-auto-inbox-sheet");
 
   const t = copy[language];
   const content = localizedContent[language];
@@ -716,6 +815,16 @@ function AutoInboxApp() {
         minute: "2-digit",
       }).format(new Date(gmailSync.lastSyncAt))
     : t.gmail.neverSynced;
+  const sheetsBridgeAvailable = hasDesktopSheetsBridge();
+  const sheetsIntegrationTone = getSheetsIntegrationTone(sheetsSync.status);
+  const sheetsModeLabel = t.sheets.mode[sheetsSync.mode];
+  const normalizedSheetId = extractSpreadsheetId(sheetInput);
+  const sheetsLastSyncLabel = sheetsSync.lastSyncAt
+    ? new Intl.DateTimeFormat(language === "es" ? "es-AR" : "en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(sheetsSync.lastSyncAt))
+    : t.sheets.neverSynced;
 
   React.useEffect(() => {
     let mounted = true;
@@ -746,6 +855,42 @@ function AutoInboxApp() {
       mounted = false;
     };
   }, [gmailBridgeAvailable]);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    if (!sheetsBridgeAvailable) {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    void getDesktopSheetsStatus().then((status) => {
+      if (!mounted || !status) return;
+
+      setSheetsSync((current) => ({
+        ...current,
+        ...status,
+        mode: status.mode ?? "desktop-oauth",
+        status: status.status ?? current.status,
+        spreadsheetId: status.spreadsheetId ?? current.spreadsheetId,
+        spreadsheetTitle: status.spreadsheetTitle ?? current.spreadsheetTitle,
+        lastSyncAt: status.lastSyncAt ?? current.lastSyncAt,
+        faqRows: status.faqRows ?? current.faqRows,
+        ruleRows: status.ruleRows ?? current.ruleRows,
+        activityRows: status.activityRows ?? current.activityRows,
+        tabs: status.tabs ?? current.tabs,
+      }));
+
+      if (status.spreadsheetId) {
+        setSheetInput(status.spreadsheetId);
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [sheetsBridgeAvailable]);
 
   const filtered = mails.filter((mail) => {
     const translatedIntent = t.intents[mail.intentKey];
@@ -846,6 +991,92 @@ function AutoInboxApp() {
     }
   };
 
+  const connectGoogleSheets = async () => {
+    const spreadsheetId = normalizedSheetId;
+    if (!spreadsheetId) {
+      setSheetsSync((current) => ({ ...current, status: "error" }));
+      return;
+    }
+
+    const mode: SheetsBridgeMode = sheetsBridgeAvailable ? "desktop-oauth" : "demo-bridge";
+    setSheetsSync((current) => ({ ...current, status: "connecting", mode, error: undefined }));
+
+    try {
+      const snapshot = await connectSheets(spreadsheetId);
+      const knowledge = await readSheetsKnowledgeBase(snapshot.spreadsheetId);
+      setSheetsSync({
+        ...snapshot,
+        faqRows: knowledge.faq.length || snapshot.faqRows,
+        ruleRows: knowledge.rules.length || snapshot.ruleRows,
+        lastSyncAt: new Date().toISOString(),
+      });
+    } catch {
+      setSheetsSync((current) => ({ ...current, status: "error" }));
+    }
+  };
+
+  const reloadSheets = async () => {
+    const spreadsheetId = sheetsSync.spreadsheetId || normalizedSheetId;
+    if (!spreadsheetId || sheetsSync.status === "disconnected") return;
+
+    setSheetsSync((current) => ({ ...current, status: "syncing", error: undefined }));
+
+    try {
+      const knowledge = await readSheetsKnowledgeBase(spreadsheetId);
+      setSheetsSync((current) => ({
+        ...current,
+        status: "connected",
+        lastSyncAt: new Date().toISOString(),
+        faqRows: knowledge.faq.length,
+        ruleRows: knowledge.rules.length,
+      }));
+    } catch {
+      setSheetsSync((current) => ({ ...current, status: "error" }));
+    }
+  };
+
+  const logSelectedEmailToSheet = async () => {
+    const spreadsheetId = sheetsSync.spreadsheetId || normalizedSheetId;
+    if (!spreadsheetId || sheetsSync.status !== "connected") return;
+
+    setSheetsSync((current) => ({ ...current, status: "syncing", error: undefined }));
+
+    const activityRow: SheetActivityRow = {
+      timestamp: new Date().toISOString(),
+      emailId: String(selected.id),
+      sender: selected.sender,
+      subject: selected.subject,
+      intent: selectedIntent,
+      confidence: selected.confidence,
+      status: selectedSent ? "sent" : selected.status,
+      draftCreated: Boolean(draftText.trim()),
+    };
+
+    try {
+      const result = await appendSheetActivityLog(spreadsheetId, activityRow);
+      setSheetsSync((current) => ({
+        ...current,
+        status: "connected",
+        lastSyncAt: new Date().toISOString(),
+        activityRows: current.activityRows + (result.updatedRows ?? 1),
+      }));
+    } catch {
+      setSheetsSync((current) => ({ ...current, status: "error" }));
+    }
+  };
+
+  const disconnectGoogleSheets = async () => {
+    if (sheetsSync.status === "connecting" || sheetsSync.status === "syncing") return;
+    setSheetsSync((current) => ({ ...current, status: "syncing" }));
+
+    try {
+      await disconnectSheets();
+      setSheetsSync(initialSheetsSync);
+    } catch {
+      setSheetsSync((current) => ({ ...current, status: "error" }));
+    }
+  };
+
   return (
     <main className="app-frame">
       <aside className="sidebar">
@@ -889,7 +1120,12 @@ function AutoInboxApp() {
             tone={gmailIntegrationTone}
           />
           <IntegrationRow icon={<Sparkles size={16} />} label="OpenAI" status={t.connected} />
-          <IntegrationRow icon={<Archive size={16} />} label="Google Sheets" status={t.connected} />
+          <IntegrationRow
+            icon={<Archive size={16} />}
+            label="Google Sheets"
+            status={t.sheets.status[sheetsSync.status]}
+            tone={sheetsIntegrationTone}
+          />
         </div>
 
         <div className="mode-box">
@@ -1202,6 +1438,114 @@ function AutoInboxApp() {
           ) : null}
         </section>
 
+        <section className="sheets-card">
+          <div className="section-heading">
+            <h2>
+              <Archive size={17} />
+              {t.sheets.title}
+            </h2>
+            <span className={`connection-pill ${sheetsSync.status}`}>
+              {t.sheets.status[sheetsSync.status]}
+            </span>
+          </div>
+
+          <p className="gmail-description">
+            {sheetsBridgeAvailable ? t.sheets.desktopReady : t.sheets.demoReady}
+            {" - "}
+            {t.sheets.description}
+          </p>
+
+          <label className="sheet-input">
+            <span>{t.sheets.spreadsheetId}</span>
+            <input
+              value={sheetInput}
+              onChange={(event) => setSheetInput(event.target.value)}
+              placeholder={t.sheets.spreadsheetPlaceholder}
+            />
+          </label>
+
+          <div className="sheets-actions">
+            <button
+              className="secondary-button"
+              onClick={connectGoogleSheets}
+              disabled={
+                !normalizedSheetId ||
+                sheetsSync.status === "connecting" ||
+                sheetsSync.status === "syncing"
+              }
+            >
+              <Archive size={16} />
+              {t.sheets.connect}
+            </button>
+            <button
+              className="secondary-button"
+              onClick={reloadSheets}
+              disabled={
+                sheetsSync.status === "disconnected" ||
+                sheetsSync.status === "connecting" ||
+                sheetsSync.status === "syncing"
+              }
+            >
+              <RefreshCcw size={16} />
+              {t.sheets.reload}
+            </button>
+            <button
+              className="secondary-button"
+              onClick={logSelectedEmailToSheet}
+              disabled={sheetsSync.status !== "connected"}
+            >
+              <FilePenLine size={16} />
+              {t.sheets.logDemo}
+            </button>
+            <button
+              className="ghost-button"
+              onClick={disconnectGoogleSheets}
+              disabled={
+                sheetsSync.status === "disconnected" ||
+                sheetsSync.status === "connecting" ||
+                sheetsSync.status === "syncing"
+              }
+            >
+              {t.sheets.disconnect}
+            </button>
+          </div>
+
+          <div className="gmail-grid">
+            <Metric
+              label={t.sheets.spreadsheet}
+              value={sheetsSync.spreadsheetTitle || t.sheets.noSpreadsheet}
+            />
+            <Metric label={t.sheets.lastSync} value={sheetsLastSyncLabel} />
+            <Metric label={t.sheets.faqRows} value={String(sheetsSync.faqRows)} />
+            <Metric label={t.sheets.ruleRows} value={String(sheetsSync.ruleRows)} />
+            <Metric label={t.sheets.activityRows} value={String(sheetsSync.activityRows)} />
+            <Metric label={t.sections.mode} value={sheetsModeLabel} />
+          </div>
+
+          <div className="sheet-tabs" aria-label={t.sheets.expectedTabs}>
+            <span>{t.sheets.expectedTabs}</span>
+            {AUTO_INBOX_SHEET_TABS.map((tabName) => (
+              <code
+                className={sheetsSync.tabs.includes(tabName) ? "present" : ""}
+                key={tabName}
+              >
+                {tabName}
+              </code>
+            ))}
+          </div>
+
+          <div className="scope-list" aria-label={t.sheets.scopes}>
+            <span>{t.sheets.scopes}</span>
+            {SHEETS_SCOPES.map((scope) => (
+              <code key={scope}>{scope.replace("https://www.googleapis.com/auth/", "")}</code>
+            ))}
+          </div>
+
+          {sheetsSync.status === "error" ? (
+            <p className="gmail-error">{t.sheets.errorHelp}</p>
+          ) : null}
+        </section>
+
         <section className="automation-card">
           <div className="section-heading">
             <h2>{t.sections.automation}</h2>
@@ -1280,6 +1624,13 @@ function IntegrationRow({
 }
 
 function getIntegrationTone(status: GmailConnectionStatus): IntegrationTone {
+  if (status === "connected") return "connected";
+  if (status === "connecting" || status === "syncing") return "syncing";
+  if (status === "error") return "error";
+  return "idle";
+}
+
+function getSheetsIntegrationTone(status: SheetsConnectionStatus): IntegrationTone {
   if (status === "connected") return "connected";
   if (status === "connecting" || status === "syncing") return "syncing";
   if (status === "error") return "error";
