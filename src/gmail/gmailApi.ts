@@ -23,7 +23,7 @@ type GmailMessageMetadataResponse = {
   };
 };
 
-type GmailHistoryResponse = {
+export type GmailHistoryResponse = {
   history?: Array<{
     id: string;
     messagesAdded?: Array<{

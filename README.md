@@ -110,6 +110,10 @@ Settings
 
 In desktop mode, the Electron bridge requests the `https://www.googleapis.com/auth/spreadsheets` scope, validates the selected spreadsheet, reads `FAQ` and `Rules`, and appends rows to `Activity`. In browser mode, the same UI uses demo data so contributors can work without Google credentials.
 
+## Automation Engine
+
+The inbox sync logic is separated from the React UI under `src/automation`. The current engine owns Gmail sync execution, heartbeat scheduling helpers, local heartbeat persistence, and duplicate detection through a bounded `seenMessageIds` cache. This keeps the UI focused on state and controls while leaving the automation flow ready for OpenAI classification and reply generation.
+
 ## Product Roadmap
 
 - Settings UI for Gmail OAuth client configuration.
@@ -126,6 +130,7 @@ In desktop mode, the Electron bridge requests the `https://www.googleapis.com/au
 Auto-Inbox/
   electron/                Electron shell, preload bridge, and Google OAuth flow
   docs/images/             README and GitHub assets
+  src/automation/          Inbox sync engine, scheduler helpers, and dedupe store
   src/gmail/               Gmail OAuth bridge, API helpers, and sync types
   src/sheets/              Sheets API helpers, bridge, and MVP data mappers
   src/main.tsx             Main React application
