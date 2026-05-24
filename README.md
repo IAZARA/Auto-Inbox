@@ -29,6 +29,7 @@ The product direction is intentionally human-in-the-loop: AI prepares the respon
 - Gmail draft creation for manual review before sending.
 - Automation status panel and activity log for observability.
 - English and Spanish interface language toggle while keeping email content untouched.
+- Real light/dark theme selector using CSS theme tokens and native `color-scheme` rendering.
 - Responsive layout with no horizontal overflow on mobile.
 
 ## Tech Stack

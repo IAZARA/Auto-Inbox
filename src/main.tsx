@@ -82,6 +82,7 @@ import {
 import "./styles.css";
 
 type Language = "en" | "es";
+type Theme = "light" | "dark";
 type MailStatus = "draft" | "ready" | "waiting" | "sent" | "gmailDraft";
 type MailFolder = "all" | "unreplied" | "flagged";
 type IntentKey =
@@ -148,6 +149,8 @@ type LocaleContent = {
   knowledgeMatches: KnowledgeMatch[];
   activityItems: string[];
 };
+
+const themeStorageKey = "auto-inbox:theme";
 
 const copy = {
   en: {
@@ -272,6 +275,11 @@ const copy = {
     languageName: {
       en: "English",
       es: "Spanish",
+    },
+    theme: "Theme",
+    themeName: {
+      light: "Light",
+      dark: "Dark",
     },
     searchPlaceholder: "Search emails...",
     filter: "Filter",
@@ -489,6 +497,11 @@ const copy = {
     languageName: {
       en: "Ingl\u00e9s",
       es: "Espa\u00f1ol",
+    },
+    theme: "Tema",
+    themeName: {
+      light: "Claro",
+      dark: "Oscuro",
     },
     searchPlaceholder: "Buscar emails...",
     filter: "Filtrar",
@@ -884,6 +897,7 @@ const initialSheetsSync: SheetsSyncSnapshot = {
 function AutoInboxApp() {
   const persistedInboxState = React.useMemo(() => loadPersistedInboxState(), []);
   const [language, setLanguage] = React.useState<Language>("en");
+  const [theme, setTheme] = React.useState<Theme>(() => loadPersistedTheme());
   const [mailItems, setMailItems] = React.useState<MailItem[]>(() =>
     demoMails.map((mail) => ({
       ...mail,
@@ -1025,6 +1039,11 @@ function AutoInboxApp() {
       gmailDraftIds,
     });
   }, [drafts, sentIds, gmailDraftIds]);
+
+  React.useEffect(() => {
+    applyDocumentTheme(theme);
+    persistTheme(theme);
+  }, [theme]);
 
   React.useEffect(() => {
     let mounted = true;
@@ -1436,7 +1455,7 @@ function AutoInboxApp() {
   ]);
 
   return (
-    <main className="app-frame">
+    <main className="app-frame" data-theme={theme}>
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">
@@ -1509,6 +1528,13 @@ function AutoInboxApp() {
             >
               <option value="en">{t.languageName.en}</option>
               <option value="es">{t.languageName.es}</option>
+            </select>
+          </label>
+          <label className="language-select">
+            <span>{t.theme}</span>
+            <select value={theme} onChange={(event) => setTheme(event.target.value as Theme)}>
+              <option value="light">{t.themeName.light}</option>
+              <option value="dark">{t.themeName.dark}</option>
             </select>
           </label>
         </div>
@@ -2068,6 +2094,23 @@ function getAIStatusLabel(status: AutoInboxAIStatus, labels: typeof copy.en.ai) 
   return labels.demo;
 }
 
+function loadPersistedTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+  const stored = window.localStorage.getItem(themeStorageKey);
+  if (stored === "dark" || stored === "light") return stored;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyDocumentTheme(theme: Theme) {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.theme = theme;
+}
+
+function persistTheme(theme: Theme) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(themeStorageKey, theme);
+}
+
 function mergeMailItems(
   current: MailItem[],
   incoming: MailItem[],
@@ -2215,6 +2258,8 @@ function Metric({
     </div>
   );
 }
+
+applyDocumentTheme(loadPersistedTheme());
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
