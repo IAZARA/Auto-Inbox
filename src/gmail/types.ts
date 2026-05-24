@@ -39,6 +39,20 @@ export type GmailSyncSnapshot = {
   error?: string;
 };
 
+export type GmailHistoryResponse = {
+  history?: Array<{
+    id: string;
+    messagesAdded?: Array<{
+      message: {
+        id: string;
+        threadId: string;
+        labelIds?: string[];
+      };
+    }>;
+  }>;
+  historyId?: string;
+};
+
 export type GmailDesktopBridge = {
   connect: (request: { scopes: readonly string[] }) => Promise<GmailOAuthSession>;
   disconnect: () => Promise<void>;
@@ -51,13 +65,17 @@ export type GmailMessageSummary = {
   threadId: string;
   historyId?: string;
   from: string;
+  fromEmail: string;
   subject: string;
   date: string;
   snippet: string;
+  bodyText: string;
+  labelIds: string[];
 };
 
 export type GmailDraftRequest = {
   to: string;
   subject: string;
   body: string;
+  threadId?: string;
 };

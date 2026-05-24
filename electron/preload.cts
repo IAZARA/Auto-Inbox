@@ -18,3 +18,8 @@ contextBridge.exposeInMainWorld("autoInboxSheets", {
   appendActivityLog: (request: { spreadsheetId: string; row: unknown }) =>
     ipcRenderer.invoke("sheets:append-activity-log", request),
 });
+
+contextBridge.exposeInMainWorld("autoInboxAI", {
+  getStatus: () => ipcRenderer.invoke("ai:get-status"),
+  analyzeEmail: (request: unknown) => ipcRenderer.invoke("ai:analyze-email", request),
+});

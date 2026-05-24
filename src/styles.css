@@ -616,6 +616,12 @@ button {
   border-color: #bfdbfe;
 }
 
+.status-chip.gmailDraft {
+  color: #6d28d9;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+}
+
 .message-body {
   display: grid;
   gap: 14px;

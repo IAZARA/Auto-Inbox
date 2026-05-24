@@ -30,6 +30,7 @@
     "dev": "vite --host 127.0.0.1",
     "dev:web": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "dev:desktop": "concurrently -k \"npm:dev:web\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "test": "vitest run",
     "build": "tsc --noEmit && npm run build:electron && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "preview": "vite preview --host 127.0.0.1",
@@ -52,6 +53,7 @@
     "electron-builder": "^26.8.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
+    "vitest": "^4.1.7",
     "wait-on": "^9.0.10"
   },
   "build": {

@@ -42,7 +42,10 @@ import {
   loadPersistedGmailHeartbeat,
   persistGmailHeartbeat,
 } from "./automation/syncScheduler";
-import { listInboxMessages, listNewInboxHistory } from "./gmail/gmailApi";
+import { loadPersistedInboxState, persistInboxState } from "./automation/localState";
+import { createGmailDraft, getMessageMetadata, listInboxMessages, listNewInboxHistory } from "./gmail/gmailApi";
+import { analyzeEmail, getAutoInboxAIStatus, hasDesktopAIBridge } from "./ai/aiBridge";
+import type { AutoInboxAIStatus } from "./ai/types";
 import {
   connectGmailOAuth,
   disconnectGmailOAuth,
@@ -55,6 +58,7 @@ import {
   GMAIL_SCOPES,
   type GmailBridgeMode,
   type GmailConnectionStatus,
+  type GmailMessageSummary,
   type GmailSyncSnapshot,
 } from "./gmail/types";
 import { extractSpreadsheetId } from "./sheets/sheetsApi";
@@ -70,6 +74,7 @@ import {
   AUTO_INBOX_SHEET_TABS,
   SHEETS_SCOPES,
   type SheetActivityRow,
+  type SheetsKnowledgeBase,
   type SheetsBridgeMode,
   type SheetsConnectionStatus,
   type SheetsSyncSnapshot,
@@ -77,9 +82,10 @@ import {
 import "./styles.css";
 
 type Language = "en" | "es";
-type MailStatus = "draft" | "ready" | "waiting" | "sent";
+type MailStatus = "draft" | "ready" | "waiting" | "sent" | "gmailDraft";
 type MailFolder = "all" | "unreplied" | "flagged";
 type IntentKey =
+  | "unknown"
   | "shippingIssue"
   | "returnRequest"
   | "pricing"
@@ -88,13 +94,24 @@ type IntentKey =
   | "sales"
   | "shipping";
 type TimeKey = "tenTwentyFour" | "nineFifteen" | "yesterday" | "tuesday";
-type SourceKey = "shipping" | "returns" | "pricing" | "billing" | "account" | "sales";
+type SourceKey =
+  | "general"
+  | "shipping"
+  | "returns"
+  | "pricing"
+  | "billing"
+  | "account"
+  | "sales"
+  | "googleSheets";
 type SatisfactionKey = "positive" | "neutral" | "new";
 type LastContactKey = "today" | "yesterday" | "twoDaysAgo" | "threeDaysAgo" | "oneWeekAgo" | "tuesday";
 type IntegrationTone = "connected" | "syncing" | "idle" | "error";
 
 type MailItem = {
-  id: number;
+  id: string;
+  gmailMessageId?: string;
+  threadId?: string;
+  gmailDraftId?: string;
   sender: string;
   initials: string;
   email: string;
@@ -102,13 +119,17 @@ type MailItem = {
   preview: string;
   body: string[];
   intentKey: IntentKey;
+  intentLabel?: string;
   confidence: number;
-  timeKey: TimeKey;
+  timeKey?: TimeKey;
+  timeLabel?: string;
   status: MailStatus;
   unread?: boolean;
   accent: string;
   sourceKey: SourceKey;
   answer: string;
+  knowledgeMatches?: KnowledgeMatch[];
+  activityItems?: string[];
   history: {
     conversations: number;
     lastContactKey: LastContactKey;
@@ -119,7 +140,8 @@ type MailItem = {
 type KnowledgeMatch = {
   question: string;
   answer: string;
-  sourceKey: SourceKey;
+  sourceKey?: SourceKey;
+  source?: string;
 };
 
 type LocaleContent = {
@@ -232,6 +254,19 @@ const copy = {
         error: "Needs attention",
       },
     },
+    ai: {
+      configured: "Configured",
+      missingKey: "Missing API key",
+      demo: "Demo AI",
+      error: "Needs attention",
+      analyzing: "Analyzing",
+      title: "AI provider",
+      provider: "Provider",
+      model: "Model",
+      apiKey: "API key env",
+      baseUrl: "Base URL",
+      noBaseUrl: "Default endpoint",
+    },
     draftFirstMode: "Draft-first (review required)",
     language: "Language",
     languageName: {
@@ -279,8 +314,10 @@ const copy = {
       ready: "Ready",
       waiting: "Ignored",
       sent: "Sent",
+      gmailDraft: "Gmail draft",
     },
     intents: {
+      unknown: "Unknown",
       shippingIssue: "Shipping Issue",
       returnRequest: "Return Request",
       pricing: "Pricing",
@@ -290,12 +327,14 @@ const copy = {
       shipping: "Shipping",
     },
     sources: {
+      general: "Knowledge base",
       shipping: "Shipping_FAQ",
       returns: "Returns_FAQ",
       pricing: "Pricing_FAQ",
       billing: "Billing_FAQ",
       account: "Account_FAQ",
       sales: "Sales_FAQ",
+      googleSheets: "Google Sheets",
     },
     time: {
       tenTwentyFour: "10:24 AM",
@@ -321,9 +360,9 @@ const copy = {
     draft: "Draft",
     generatedReply: "Generated reply",
     regenerate: "Regenerate",
-    send: "Send",
-    sentAction: "Sent",
-    draftNote: "Draft-first mode - You review and send manually.",
+    send: "Create draft",
+    sentAction: "Draft created",
+    draftNote: "Draft-first mode - A Gmail draft is created for manual review.",
     viewAll: "View all",
     noDraft: "No suggested reply is available for this message.",
     minuteValue: "2 min",
@@ -432,6 +471,19 @@ const copy = {
         error: "Revisar",
       },
     },
+    ai: {
+      configured: "Configurado",
+      missingKey: "Falta API key",
+      demo: "IA demo",
+      error: "Revisar",
+      analyzing: "Analizando",
+      title: "Proveedor IA",
+      provider: "Proveedor",
+      model: "Modelo",
+      apiKey: "Variable API key",
+      baseUrl: "Base URL",
+      noBaseUrl: "Endpoint por defecto",
+    },
     draftFirstMode: "Borrador primero (requiere revisi\u00f3n)",
     language: "Idioma",
     languageName: {
@@ -479,8 +531,10 @@ const copy = {
       ready: "Listo",
       waiting: "Ignorado",
       sent: "Enviado",
+      gmailDraft: "Borrador Gmail",
     },
     intents: {
+      unknown: "Sin clasificar",
       shippingIssue: "Problema de env\u00edo",
       returnRequest: "Solicitud de devoluci\u00f3n",
       pricing: "Precios",
@@ -490,12 +544,14 @@ const copy = {
       shipping: "Env\u00edo",
     },
     sources: {
+      general: "Base de conocimiento",
       shipping: "Env\u00edos_FAQ",
       returns: "Devoluciones_FAQ",
       pricing: "Precios_FAQ",
       billing: "Facturaci\u00f3n_FAQ",
       account: "Cuenta_FAQ",
       sales: "Ventas_FAQ",
+      googleSheets: "Google Sheets",
     },
     time: {
       tenTwentyFour: "10:24 AM",
@@ -521,18 +577,18 @@ const copy = {
     draft: "Borrador",
     generatedReply: "Respuesta generada",
     regenerate: "Regenerar",
-    send: "Enviar",
-    sentAction: "Enviado",
-    draftNote: "Modo borrador primero - Revisas y env\u00edas manualmente.",
+    send: "Crear borrador",
+    sentAction: "Borrador creado",
+    draftNote: "Modo borrador primero - Se crea un borrador Gmail para revisi\u00f3n manual.",
     viewAll: "Ver todo",
     noDraft: "No hay una respuesta sugerida disponible para este mensaje.",
     minuteValue: "2 min",
   },
 };
 
-const mails: MailItem[] = [
+const demoMails: MailItem[] = [
   {
-    id: 1,
+    id: "demo-1",
     sender: "Alex Johnson",
     initials: "A",
     email: "alex.johnson@email.com",
@@ -561,7 +617,7 @@ const mails: MailItem[] = [
     },
   },
   {
-    id: 2,
+    id: "demo-2",
     sender: "Sarah Lee",
     initials: "S",
     email: "sarah.lee@email.com",
@@ -589,7 +645,7 @@ const mails: MailItem[] = [
     },
   },
   {
-    id: 3,
+    id: "demo-3",
     sender: "Michael Chen",
     initials: "M",
     email: "michael.chen@email.com",
@@ -617,7 +673,7 @@ const mails: MailItem[] = [
     },
   },
   {
-    id: 4,
+    id: "demo-4",
     sender: "Priya Patel",
     initials: "P",
     email: "priya.patel@email.com",
@@ -643,7 +699,7 @@ const mails: MailItem[] = [
     },
   },
   {
-    id: 5,
+    id: "demo-5",
     sender: "David Kim",
     initials: "D",
     email: "david.kim@email.com",
@@ -670,7 +726,7 @@ const mails: MailItem[] = [
     },
   },
   {
-    id: 6,
+    id: "demo-6",
     sender: "Emma Wilson",
     initials: "E",
     email: "emma.wilson@email.com",
@@ -696,7 +752,7 @@ const mails: MailItem[] = [
     },
   },
   {
-    id: 7,
+    id: "demo-7",
     sender: "James Brown",
     initials: "J",
     email: "james.brown@email.com",
@@ -778,16 +834,24 @@ const localizedContent: Record<Language, LocaleContent> = {
   },
 };
 
-const folderCounts: Record<MailFolder, number> = {
-  all: 12,
-  unreplied: 7,
-  flagged: 2,
-};
-
-const initialDrafts = Object.fromEntries(mails.map((mail) => [mail.id, mail.answer])) as Record<
-  number,
+const initialDrafts = Object.fromEntries(demoMails.map((mail) => [mail.id, mail.answer])) as Record<
+  string,
   string
 >;
+
+const initialKnowledgeBase: SheetsKnowledgeBase = {
+  faq: [],
+  rules: [],
+};
+
+const initialAIStatus: AutoInboxAIStatus = {
+  status: "demo",
+  mode: "demo-bridge",
+  provider: "demo",
+  providerLabel: "Demo rules",
+  model: "demo-rules",
+  apiKeyEnv: "",
+};
 
 const initialGmailSync: GmailSyncSnapshot = {
   status: "disconnected",
@@ -818,27 +882,66 @@ const initialSheetsSync: SheetsSyncSnapshot = {
 };
 
 function AutoInboxApp() {
+  const persistedInboxState = React.useMemo(() => loadPersistedInboxState(), []);
   const [language, setLanguage] = React.useState<Language>("en");
-  const [selectedId, setSelectedId] = React.useState(1);
+  const [mailItems, setMailItems] = React.useState<MailItem[]>(() =>
+    demoMails.map((mail) => ({
+      ...mail,
+      gmailDraftId: persistedInboxState.gmailDraftIds[mail.id],
+    })),
+  );
+  const [selectedId, setSelectedId] = React.useState(demoMails[0].id);
   const [query, setQuery] = React.useState("");
   const [activeFolder, setActiveFolder] = React.useState<MailFolder>("all");
   const [queuePaused, setQueuePaused] = React.useState(false);
-  const [sentIds, setSentIds] = React.useState<number[]>([7]);
-  const [drafts, setDrafts] = React.useState<Record<number, string>>(initialDrafts);
+  const [sentIds, setSentIds] = React.useState<string[]>(() =>
+    persistedInboxState.sentIds.length > 0 ? persistedInboxState.sentIds : ["demo-7"],
+  );
+  const [gmailDraftIds, setGmailDraftIds] = React.useState<Record<string, string>>(
+    persistedInboxState.gmailDraftIds,
+  );
+  const [drafts, setDrafts] = React.useState<Record<string, string>>(() => ({
+    ...initialDrafts,
+    ...persistedInboxState.drafts,
+  }));
   const [gmailSync, setGmailSync] = React.useState<GmailSyncSnapshot>(() => ({
     ...initialGmailSync,
     ...loadPersistedGmailHeartbeat(),
   }));
   const [sheetsSync, setSheetsSync] = React.useState<SheetsSyncSnapshot>(initialSheetsSync);
+  const [knowledgeBase, setKnowledgeBase] =
+    React.useState<SheetsKnowledgeBase>(initialKnowledgeBase);
+  const [aiStatus, setAiStatus] = React.useState<AutoInboxAIStatus>(initialAIStatus);
+  const [processingIds, setProcessingIds] = React.useState<string[]>([]);
+  const [draftingId, setDraftingId] = React.useState<string | null>(null);
   const [sheetInput, setSheetInput] = React.useState("demo-auto-inbox-sheet");
   const [, setClockNow] = React.useState(() => Date.now());
 
   const t = copy[language];
   const content = localizedContent[language];
-  const selected = mails.find((mail) => mail.id === selectedId) ?? mails[0];
+  const selected = mailItems.find((mail) => mail.id === selectedId) ?? mailItems[0] ?? demoMails[0];
   const draftText = drafts[selected.id] ?? "";
   const selectedSent = sentIds.includes(selected.id);
-  const selectedIntent = t.intents[selected.intentKey];
+  const selectedDraftCreated = Boolean(gmailDraftIds[selected.id] || selected.gmailDraftId);
+  const selectedIntent = selected.intentLabel || t.intents[selected.intentKey];
+  const selectedStatus: MailStatus = selectedDraftCreated ? "gmailDraft" : selected.status;
+  const selectedKnowledgeMatches =
+    selected.knowledgeMatches && selected.knowledgeMatches.length > 0
+      ? selected.knowledgeMatches
+      : content.knowledgeMatches;
+  const selectedActivityItems =
+    selected.activityItems && selected.activityItems.length > 0
+      ? selected.activityItems
+      : content.activityItems;
+  const folderCounts: Record<MailFolder, number> = {
+    all: mailItems.length,
+    unreplied: mailItems.filter((mail) => !sentIds.includes(mail.id) && !gmailDraftIds[mail.id])
+      .length,
+    flagged: mailItems.filter((mail) => mail.confidence < 90 || mail.status === "draft").length,
+  };
+  const aiBridgeAvailable = hasDesktopAIBridge();
+  const aiIntegrationStatus = getAIStatusLabel(aiStatus, t.ai);
+  const aiIntegrationTone = getAIIntegrationTone(aiStatus.status);
   const gmailBridgeAvailable = hasDesktopGmailBridge();
   const gmailIntegrationTone = getIntegrationTone(gmailSync.status);
   const gmailModeLabel = t.gmail.mode[gmailSync.mode];
@@ -916,6 +1019,32 @@ function AutoInboxApp() {
   ]);
 
   React.useEffect(() => {
+    persistInboxState({
+      drafts,
+      sentIds,
+      gmailDraftIds,
+    });
+  }, [drafts, sentIds, gmailDraftIds]);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    void getAutoInboxAIStatus()
+      .then((status) => {
+        if (mounted) setAiStatus(status);
+      })
+      .catch(() => {
+        if (mounted) {
+          setAiStatus((current) => ({ ...current, status: "error" }));
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [aiBridgeAvailable]);
+
+  React.useEffect(() => {
     if (!gmailSync.heartbeatEnabled || gmailSync.status !== "connected") return;
 
     const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
@@ -958,20 +1087,66 @@ function AutoInboxApp() {
     };
   }, [sheetsBridgeAvailable]);
 
-  const filtered = mails.filter((mail) => {
-    const translatedIntent = t.intents[mail.intentKey];
+  const filtered = mailItems.filter((mail) => {
+    const translatedIntent = mail.intentLabel || t.intents[mail.intentKey];
     const matchesQuery = `${mail.sender} ${mail.subject} ${mail.preview} ${translatedIntent}`
       .toLowerCase()
       .includes(query.toLowerCase());
     if (!matchesQuery) return false;
-    if (activeFolder === "unreplied") return !sentIds.includes(mail.id);
+    if (activeFolder === "unreplied") return !sentIds.includes(mail.id) && !gmailDraftIds[mail.id];
     if (activeFolder === "flagged") return mail.confidence < 90 || mail.status === "draft";
     return true;
   });
 
-  const sendReply = () => {
-    if (!draftText.trim() || selectedSent || queuePaused) return;
-    setSentIds((current) => Array.from(new Set([...current, selected.id])));
+  const createDraftForSelected = async () => {
+    if (!draftText.trim() || selectedSent || selectedDraftCreated || queuePaused || draftingId) return;
+
+    setDraftingId(selected.id);
+
+    try {
+      const accessToken = await getGmailAccessToken();
+      let draftId = `demo-draft-${selected.id}`;
+
+      if (accessToken && selected.email && !selected.id.startsWith("demo-")) {
+        const draft = await createGmailDraft(accessToken, {
+          to: selected.email,
+          subject: getReplySubject(selected.subject),
+          body: draftText,
+          threadId: selected.threadId,
+        });
+        draftId = draft.id;
+      }
+
+      setGmailDraftIds((current) => ({ ...current, [selected.id]: draftId }));
+      setMailItems((current) =>
+        current.map((mail) =>
+          mail.id === selected.id
+            ? {
+                ...mail,
+                status: "gmailDraft",
+                gmailDraftId: draftId,
+                activityItems: [
+                  ...(mail.activityItems ?? []),
+                  accessToken ? "Gmail draft created" : "Demo draft created",
+                ],
+              }
+            : mail,
+        ),
+      );
+    } catch {
+      setMailItems((current) =>
+        current.map((mail) =>
+          mail.id === selected.id
+            ? {
+                ...mail,
+                activityItems: [...(mail.activityItems ?? []), "Draft creation failed"],
+              }
+            : mail,
+        ),
+      );
+    } finally {
+      setDraftingId(null);
+    }
   };
 
   const connectGmail = async () => {
@@ -989,7 +1164,7 @@ function AutoInboxApp() {
         nextSyncInSeconds: current.heartbeatIntervalSeconds,
         nextSyncAt: getNextSyncAt(current.heartbeatIntervalSeconds),
         historyId: session.historyId ?? "",
-        loadedMessages: Math.max(current.loadedMessages, mails.length),
+        loadedMessages: Math.max(current.loadedMessages, mailItems.length),
       }));
     } catch {
       setGmailSync((current) => ({ ...current, status: "error" }));
@@ -1005,12 +1180,28 @@ function AutoInboxApp() {
     try {
       const nextSync = await runGmailInboxSync(previous, {
         getAccessToken: getGmailAccessToken,
+        getMessage: getMessageMetadata,
         listInboxMessages,
         listNewInboxHistory,
         simulateInboxSync,
       });
 
-      setGmailSync(nextSync);
+      const importedMessages = nextSync.messages.map(mapGmailMessageToMailItem);
+      if (importedMessages.length > 0) {
+        setMailItems((current) => mergeMailItems(current, importedMessages, gmailDraftIds));
+        setDrafts((current) => ({
+          ...Object.fromEntries(importedMessages.map((mail) => [mail.id, current[mail.id] ?? ""])),
+          ...current,
+        }));
+        if (selected.id.startsWith("demo-")) {
+          setSelectedId(importedMessages[0].id);
+        }
+        importedMessages.forEach((mail) => {
+          void processMailWithAI(mail);
+        });
+      }
+
+      setGmailSync(nextSync.snapshot);
     } catch {
       setGmailSync((current) => ({ ...current, status: "error" }));
     }
@@ -1069,6 +1260,7 @@ function AutoInboxApp() {
     try {
       const snapshot = await connectSheets(spreadsheetId);
       const knowledge = await readSheetsKnowledgeBase(snapshot.spreadsheetId);
+      setKnowledgeBase(knowledge);
       setSheetsSync({
         ...snapshot,
         faqRows: knowledge.faq.length || snapshot.faqRows,
@@ -1088,6 +1280,7 @@ function AutoInboxApp() {
 
     try {
       const knowledge = await readSheetsKnowledgeBase(spreadsheetId);
+      setKnowledgeBase(knowledge);
       setSheetsSync((current) => ({
         ...current,
         status: "connected",
@@ -1113,7 +1306,7 @@ function AutoInboxApp() {
       subject: selected.subject,
       intent: selectedIntent,
       confidence: selected.confidence,
-      status: selectedSent ? "sent" : selected.status,
+      status: selectedDraftCreated ? "gmail_draft" : selectedSent ? "sent" : selected.status,
       draftCreated: Boolean(draftText.trim()),
     };
 
@@ -1137,10 +1330,83 @@ function AutoInboxApp() {
     try {
       await disconnectSheets();
       setSheetsSync(initialSheetsSync);
+      setKnowledgeBase(initialKnowledgeBase);
     } catch {
       setSheetsSync((current) => ({ ...current, status: "error" }));
     }
   };
+
+  async function processMailWithAI(mail: MailItem) {
+    if (processingIds.includes(mail.id)) return;
+
+    setProcessingIds((current) => Array.from(new Set([...current, mail.id])));
+
+    try {
+      const result = await analyzeEmail({
+        email: {
+          id: mail.gmailMessageId ?? mail.id,
+          sender: mail.sender,
+          senderEmail: mail.email,
+          subject: mail.subject,
+          bodyText: mail.body.join("\n\n"),
+        },
+        knowledgeBase,
+      });
+
+      const intentKey = getIntentKeyFromLabel(result.intent);
+      const knowledgeMatches = result.matchedQuestions.map((match) => ({
+        question: match.question,
+        answer: match.answer,
+        source: match.source,
+        sourceKey: "googleSheets" as SourceKey,
+      }));
+
+      setDrafts((current) => ({
+        ...current,
+        [mail.id]: result.draft,
+      }));
+      setMailItems((current) =>
+        current.map((item) =>
+          item.id === mail.id
+            ? {
+                ...item,
+                intentKey,
+                intentLabel: result.intent,
+                confidence: Math.round(result.confidence),
+                status: result.requiresHumanReview ? "draft" : "ready",
+                answer: result.draft,
+                knowledgeMatches,
+                activityItems: result.activityItems.length
+                  ? result.activityItems
+                  : [
+                      `Email analyzed from ${mail.sender}`,
+                      `Intent identified: ${result.intent}`,
+                      `FAQ matches found (${knowledgeMatches.length})`,
+                      "Draft generated for human review",
+                    ],
+              }
+            : item,
+        ),
+      );
+    } catch {
+      setMailItems((current) =>
+        current.map((item) =>
+          item.id === mail.id
+            ? {
+                ...item,
+                status: "waiting",
+                activityItems: [
+                  ...(item.activityItems ?? []),
+                  "AI analysis skipped or failed; manual review needed",
+                ],
+              }
+            : item,
+        ),
+      );
+    } finally {
+      setProcessingIds((current) => current.filter((id) => id !== mail.id));
+    }
+  }
 
   React.useEffect(() => {
     if (!gmailSync.heartbeatEnabled || queuePaused || gmailSync.status !== "connected") return;
@@ -1211,7 +1477,12 @@ function AutoInboxApp() {
             status={t.gmail.status[gmailSync.status]}
             tone={gmailIntegrationTone}
           />
-          <IntegrationRow icon={<Sparkles size={16} />} label="OpenAI" status={t.connected} />
+          <IntegrationRow
+            icon={<Sparkles size={16} />}
+            label="OpenAI"
+            status={aiIntegrationStatus}
+            tone={aiIntegrationTone}
+          />
           <IntegrationRow
             icon={<Archive size={16} />}
             label="Google Sheets"
@@ -1282,7 +1553,7 @@ function AutoInboxApp() {
               <div className="mail-card-content">
                 <div className="mail-card-top">
                   <strong>{mail.sender}</strong>
-                  <span>{t.time[mail.timeKey]}</span>
+                  <span>{getMailTime(mail, t.time)}</span>
                 </div>
                 <h3>{mail.subject}</h3>
                 <p>{mail.preview}</p>
@@ -1334,7 +1605,7 @@ function AutoInboxApp() {
                 {selected.email} {t.to} support@yourstore.com
               </span>
             </div>
-            <time>{t.time[selected.timeKey]}</time>
+            <time>{getMailTime(selected, t.time)}</time>
             <button title={t.toolbar.reply}>
               <Reply size={17} />
             </button>
@@ -1345,13 +1616,13 @@ function AutoInboxApp() {
 
           <div className="ai-chips">
             <span>
-              {t.chips.intent} <strong>{selectedIntent}</strong>
+              {t.chips.intent} <strong>{processingIds.includes(selected.id) ? t.ai.analyzing : selectedIntent}</strong>
             </span>
             <span>
               {t.chips.confidence} <strong>{selected.confidence}%</strong>
             </span>
-            <span className={`status-chip ${selectedSent ? "sent" : selected.status}`}>
-              {selectedSent ? t.status.sent : t.status[selected.status]}
+            <span className={`status-chip ${selectedSent ? "sent" : selectedStatus}`}>
+              {selectedSent ? t.status.sent : t.status[selectedStatus]}
             </span>
           </div>
 
@@ -1372,12 +1643,12 @@ function AutoInboxApp() {
               <span>{t.table.answer}</span>
               <span>{t.table.source}</span>
             </div>
-            {content.knowledgeMatches.map((match) => (
+            {selectedKnowledgeMatches.map((match) => (
               <div className="knowledge-row" role="row" key={match.question}>
                 <span>{match.question}</span>
                 <span>{match.answer}</span>
                 <span>
-                  {t.sources[match.sourceKey]}
+                  {match.source ?? t.sources[match.sourceKey ?? "general"]}
                   <Link size={13} />
                 </span>
               </div>
@@ -1402,7 +1673,7 @@ function AutoInboxApp() {
               <Bot size={18} />
               {t.sections.suggestedReply}
             </h2>
-            <button>
+            <button onClick={() => void processMailWithAI(selected)}>
               <PenLine size={15} />
               {t.draft}
             </button>
@@ -1412,7 +1683,7 @@ function AutoInboxApp() {
             <button title={t.toolbar.undo}>
               <Undo2 size={16} />
             </button>
-            <button title={t.toolbar.regenerate}>
+            <button title={t.toolbar.regenerate} onClick={() => void processMailWithAI(selected)}>
               <RotateCcw size={16} />
             </button>
             <span />
@@ -1431,7 +1702,8 @@ function AutoInboxApp() {
           </div>
 
           <textarea
-            value={draftText || t.noDraft}
+            value={draftText}
+            placeholder={t.noDraft}
             onChange={(event) =>
               setDrafts((current) => ({ ...current, [selected.id]: event.target.value }))
             }
@@ -1439,18 +1711,24 @@ function AutoInboxApp() {
           />
 
           <div className="send-actions">
-            <button className="secondary-button">
+            <button className="secondary-button" onClick={() => void processMailWithAI(selected)}>
               <RefreshCcw size={16} />
               {t.regenerate}
               <ChevronDown size={15} />
             </button>
             <button
               className="send-button"
-              onClick={sendReply}
-              disabled={!draftText.trim() || selectedSent || queuePaused}
+              onClick={createDraftForSelected}
+              disabled={
+                !draftText.trim() ||
+                selectedSent ||
+                selectedDraftCreated ||
+                queuePaused ||
+                draftingId === selected.id
+              }
             >
               <Send size={18} />
-              {selectedSent ? t.sentAction : t.send}
+              {selectedDraftCreated ? t.sentAction : t.send}
               <ChevronDown size={15} />
             </button>
           </div>
@@ -1557,6 +1835,25 @@ function AutoInboxApp() {
           {gmailSync.status === "error" ? (
             <p className="gmail-error">{t.gmail.errorHelp}</p>
           ) : null}
+        </section>
+
+        <section className="gmail-card">
+          <div className="section-heading">
+            <h2>
+              <Sparkles size={17} />
+              {t.ai.title}
+            </h2>
+            <span className={`connection-pill ${aiStatus.status === "configured" ? "connected" : aiStatus.status === "missing-key" ? "disconnected" : aiStatus.status}`}>
+              {aiIntegrationStatus}
+            </span>
+          </div>
+
+          <div className="gmail-grid">
+            <Metric label={t.ai.provider} value={aiStatus.providerLabel} />
+            <Metric label={t.ai.model} value={aiStatus.model} />
+            <Metric label={t.ai.apiKey} value={aiStatus.apiKeyEnv || "--"} />
+            <Metric label={t.ai.baseUrl} value={aiStatus.baseUrl || t.ai.noBaseUrl} />
+          </div>
         </section>
 
         <section className="sheets-card">
@@ -1686,7 +1983,7 @@ function AutoInboxApp() {
             <button>{t.viewAll}</button>
           </div>
           <div className="activity-list">
-            {content.activityItems.map((item) => (
+            {selectedActivityItems.map((item) => (
               <div key={item}>
                 <time>{t.time.tenTwentyFour}</time>
                 <span>{item}</span>
@@ -1756,6 +2053,146 @@ function getSheetsIntegrationTone(status: SheetsConnectionStatus): IntegrationTo
   if (status === "connecting" || status === "syncing") return "syncing";
   if (status === "error") return "error";
   return "idle";
+}
+
+function getAIIntegrationTone(status: AutoInboxAIStatus["status"]): IntegrationTone {
+  if (status === "configured" || status === "demo") return "connected";
+  if (status === "error") return "error";
+  return "idle";
+}
+
+function getAIStatusLabel(status: AutoInboxAIStatus, labels: typeof copy.en.ai) {
+  if (status.status === "configured") return `${labels.configured}: ${status.providerLabel}`;
+  if (status.status === "missing-key") return `${labels.missingKey}: ${status.apiKeyEnv}`;
+  if (status.status === "error") return labels.error;
+  return labels.demo;
+}
+
+function mergeMailItems(
+  current: MailItem[],
+  incoming: MailItem[],
+  draftIds: Record<string, string>,
+) {
+  const byId = new Map(current.map((mail) => [mail.id, mail]));
+
+  incoming.forEach((mail) => {
+    const existing = byId.get(mail.id);
+    byId.set(mail.id, {
+      ...mail,
+      ...existing,
+      ...mail,
+      gmailDraftId: draftIds[mail.id] ?? existing?.gmailDraftId ?? mail.gmailDraftId,
+      answer: existing?.answer || mail.answer,
+      knowledgeMatches: existing?.knowledgeMatches ?? mail.knowledgeMatches,
+      activityItems: existing?.activityItems ?? mail.activityItems,
+    });
+  });
+
+  return Array.from(byId.values()).sort((left, right) => {
+    const leftTime = Date.parse(left.timeLabel ?? "");
+    const rightTime = Date.parse(right.timeLabel ?? "");
+    if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return rightTime - leftTime;
+    if (left.id.startsWith("gmail-") && right.id.startsWith("demo-")) return -1;
+    if (left.id.startsWith("demo-") && right.id.startsWith("gmail-")) return 1;
+    return 0;
+  });
+}
+
+function mapGmailMessageToMailItem(message: GmailMessageSummary): MailItem {
+  const senderName = extractSenderName(message.from);
+  const bodyText = message.bodyText || message.snippet || "";
+
+  return {
+    id: `gmail-${message.id}`,
+    gmailMessageId: message.id,
+    threadId: message.threadId,
+    sender: senderName,
+    initials: getInitials(senderName),
+    email: message.fromEmail,
+    subject: message.subject,
+    preview: message.snippet || bodyText.slice(0, 120),
+    body: bodyToParagraphs(bodyText),
+    intentKey: "unknown",
+    confidence: 0,
+    timeLabel: message.date,
+    status: "waiting",
+    unread: message.labelIds.includes("UNREAD"),
+    accent: getAccentForId(message.id),
+    sourceKey: "general",
+    answer: "",
+    activityItems: [`Email loaded from Gmail: ${message.subject}`],
+    history: {
+      conversations: 1,
+      lastContactKey: "today",
+      satisfactionKey: "new",
+    },
+  };
+}
+
+function bodyToParagraphs(value: string) {
+  const paragraphs = value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  return paragraphs.length > 0 ? paragraphs : ["No plain-text body was available for this email."];
+}
+
+function extractSenderName(from: string) {
+  const match = from.match(/^"?([^"<]+)"?\s*</);
+  return (match?.[1] ?? from.replace(/<[^>]+>/g, "")).trim() || "Unknown sender";
+}
+
+function getInitials(value: string) {
+  const initials = value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+
+  return initials || "?";
+}
+
+function getAccentForId(id: string) {
+  const accents = ["teal", "blue", "amber", "green", "rose", "violet"] as const;
+  const total = Array.from(id).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return accents[total % accents.length];
+}
+
+function getReplySubject(subject: string) {
+  return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
+}
+
+function getMailTime(mail: MailItem, labels: typeof copy.en.time) {
+  if (mail.timeKey) return labels[mail.timeKey];
+  if (!mail.timeLabel) return "";
+
+  const parsed = new Date(mail.timeLabel);
+  if (Number.isNaN(parsed.getTime())) return mail.timeLabel;
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function getIntentKeyFromLabel(intent: string): IntentKey {
+  const normalized = intent.toLowerCase();
+  if (normalized.includes("ship") || normalized.includes("tracking") || normalized.includes("order")) {
+    return normalized.includes("issue") ? "shippingIssue" : "shipping";
+  }
+  if (normalized.includes("return") || normalized.includes("refund")) return "returnRequest";
+  if (normalized.includes("price") || normalized.includes("plan")) return "pricing";
+  if (normalized.includes("bill") || normalized.includes("invoice")) return "billing";
+  if (normalized.includes("account") || normalized.includes("login")) return "accountAccess";
+  if (normalized.includes("sales") || normalized.includes("quote") || normalized.includes("bulk")) {
+    return "sales";
+  }
+  return "unknown";
 }
 
 function Avatar({ initials, accent }: { initials: string; accent: string }) {

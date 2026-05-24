@@ -1,5 +1,4 @@
-import type { GmailHistoryResponse } from "../gmail/gmailApi";
-import type { GmailMessageSummary, GmailSyncSnapshot } from "../gmail/types";
+import type { GmailHistoryResponse, GmailMessageSummary, GmailSyncSnapshot } from "../gmail/types";
 import { applyGmailDeduplication } from "./dedupeStore";
 
 export type SimulatedInboxSyncResult = {
@@ -14,6 +13,7 @@ export type GmailSyncDependencies = {
     startHistoryId: string,
   ) => Promise<GmailHistoryResponse>;
   listInboxMessages: (accessToken: string, maxResults?: number) => Promise<GmailMessageSummary[]>;
+  getMessage: (accessToken: string, messageId: string) => Promise<GmailMessageSummary>;
   simulateInboxSync: (
     currentHistoryId: string,
     loadedMessages: number,
@@ -21,13 +21,18 @@ export type GmailSyncDependencies = {
   ) => Promise<SimulatedInboxSyncResult>;
 };
 
+export type GmailInboxSyncResult = {
+  snapshot: GmailSyncSnapshot;
+  messages: GmailMessageSummary[];
+};
+
 export async function runGmailInboxSync(
   current: GmailSyncSnapshot,
   dependencies: GmailSyncDependencies,
-): Promise<GmailSyncSnapshot> {
+): Promise<GmailInboxSyncResult> {
   const accessToken = await dependencies.getAccessToken();
 
-  if (accessToken && current.historyId) {
+  if (accessToken && current.historyId && current.seenMessageIds.length > 0) {
     const history = await dependencies.listNewInboxHistory(accessToken, current.historyId);
     const messageIds =
       history.history?.flatMap((item) =>
@@ -39,20 +44,33 @@ export async function runGmailInboxSync(
         0,
       ) ?? 0;
 
-    return applyGmailDeduplication(current, {
-      historyId: history.historyId ?? current.historyId,
-      messageIds,
-      fallbackNewMessages,
-    });
+    const newMessageIds = messageIds.filter((id) => !current.seenMessageIds.includes(id));
+    const messages = await Promise.all(
+      Array.from(new Set(newMessageIds)).map((messageId) =>
+        dependencies.getMessage(accessToken, messageId),
+      ),
+    );
+
+    return {
+      snapshot: applyGmailDeduplication(current, {
+        historyId: history.historyId ?? current.historyId,
+        messageIds,
+        fallbackNewMessages,
+      }),
+      messages,
+    };
   }
 
   if (accessToken) {
     const messages = await dependencies.listInboxMessages(accessToken, 10);
 
-    return applyGmailDeduplication(current, {
-      historyId: messages[0]?.historyId ?? current.historyId,
-      messageIds: messages.map((message) => message.id),
-    });
+    return {
+      snapshot: applyGmailDeduplication(current, {
+        historyId: messages[0]?.historyId ?? current.historyId,
+        messageIds: messages.map((message) => message.id),
+      }),
+      messages,
+    };
   }
 
   const snapshot = await dependencies.simulateInboxSync(
@@ -61,10 +79,13 @@ export async function runGmailInboxSync(
     current.seenMessageIds,
   );
 
-  return applyGmailDeduplication(current, {
-    historyId: snapshot.historyId,
-    messageIds: snapshot.messageIds,
-  });
+  return {
+    snapshot: applyGmailDeduplication(current, {
+      historyId: snapshot.historyId,
+      messageIds: snapshot.messageIds,
+    }),
+    messages: [],
+  };
 }
 
 export function canRunGmailSync(snapshot: GmailSyncSnapshot) {

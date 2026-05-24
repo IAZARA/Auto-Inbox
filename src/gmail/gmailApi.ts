@@ -1,4 +1,4 @@
-import type { GmailDraftRequest, GmailMessageSummary } from "./types";
+import type { GmailDraftRequest, GmailHistoryResponse, GmailMessageSummary } from "./types";
 
 const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 
@@ -17,24 +17,16 @@ type GmailMessageMetadataResponse = {
   id: string;
   threadId: string;
   historyId?: string;
+  labelIds?: string[];
   snippet?: string;
   payload?: {
+    mimeType?: string;
+    body?: {
+      data?: string;
+    };
     headers?: GmailHeader[];
+    parts?: GmailMessageMetadataResponse["payload"][];
   };
-};
-
-export type GmailHistoryResponse = {
-  history?: Array<{
-    id: string;
-    messagesAdded?: Array<{
-      message: {
-        id: string;
-        threadId: string;
-        labelIds?: string[];
-      };
-    }>;
-  }>;
-  historyId?: string;
 };
 
 async function gmailFetch<T>(
@@ -77,8 +69,7 @@ export async function getMessageMetadata(
   accessToken: string,
   messageId: string,
 ): Promise<GmailMessageSummary> {
-  const params = new URLSearchParams({ format: "metadata" });
-  ["From", "Subject", "Date"].forEach((header) => params.append("metadataHeaders", header));
+  const params = new URLSearchParams({ format: "full" });
 
   const message = await gmailFetch<GmailMessageMetadataResponse>(
     accessToken,
@@ -119,27 +110,36 @@ export async function createGmailDraft(
 
   return gmailFetch(accessToken, "/drafts", {
     method: "POST",
-    body: JSON.stringify({ message: { raw } }),
+    body: JSON.stringify({
+      message: {
+        raw,
+        ...(draft.threadId ? { threadId: draft.threadId } : {}),
+      },
+    }),
   });
 }
 
-function normalizeMessage(message: GmailMessageMetadataResponse): GmailMessageSummary {
+export function normalizeMessage(message: GmailMessageMetadataResponse): GmailMessageSummary {
   const headers = new Map(
     (message.payload?.headers ?? []).map((header) => [header.name.toLowerCase(), header.value]),
   );
+  const from = headers.get("from") ?? "Unknown sender";
 
   return {
     id: message.id,
     threadId: message.threadId,
     historyId: message.historyId,
-    from: headers.get("from") ?? "Unknown sender",
+    from,
+    fromEmail: extractEmailAddress(from),
     subject: headers.get("subject") ?? "(no subject)",
     date: headers.get("date") ?? "",
     snippet: message.snippet ?? "",
+    bodyText: extractBodyText(message.payload) || message.snippet || "",
+    labelIds: message.labelIds ?? [],
   };
 }
 
-function buildRawEmail({ to, subject, body }: GmailDraftRequest) {
+export function buildRawEmail({ to, subject, body }: GmailDraftRequest) {
   const message = [
     `To: ${to}`,
     `Subject: ${subject}`,
@@ -149,6 +149,70 @@ function buildRawEmail({ to, subject, body }: GmailDraftRequest) {
   ].join("\r\n");
 
   return base64UrlEncode(message);
+}
+
+function extractBodyText(payload: GmailMessageMetadataResponse["payload"]): string {
+  if (!payload) return "";
+
+  const plainParts: string[] = [];
+  const htmlParts: string[] = [];
+
+  collectBodyParts(payload, plainParts, htmlParts);
+
+  if (plainParts.length > 0) {
+    return normalizeWhitespace(plainParts.join("\n\n"));
+  }
+
+  return normalizeWhitespace(htmlParts.map(stripHtml).join("\n\n"));
+}
+
+function collectBodyParts(
+  payload: GmailMessageMetadataResponse["payload"],
+  plainParts: string[],
+  htmlParts: string[],
+) {
+  if (!payload) return;
+
+  const data = payload.body?.data;
+  if (data && payload.mimeType === "text/plain") {
+    plainParts.push(decodeBase64UrlText(data));
+  } else if (data && payload.mimeType === "text/html") {
+    htmlParts.push(decodeBase64UrlText(data));
+  }
+
+  payload.parts?.forEach((part) => collectBodyParts(part, plainParts, htmlParts));
+}
+
+function decodeBase64UrlText(value: string) {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+
+  return new TextDecoder().decode(bytes);
+}
+
+function stripHtml(value: string) {
+  return value
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ");
+}
+
+function normalizeWhitespace(value: string) {
+  return value
+    .replace(/\r/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function extractEmailAddress(value: string) {
+  const match = value.match(/<([^>]+)>/);
+  return (match?.[1] ?? value).trim();
 }
 
 function base64UrlEncode(value: string) {

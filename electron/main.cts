@@ -65,6 +65,51 @@ type SheetsKnowledgeBase = {
   }>;
 };
 
+type AutoInboxAnalysisRequest = {
+  email?: {
+    id?: string;
+    sender?: string;
+    senderEmail?: string;
+    subject?: string;
+    bodyText?: string;
+  };
+  knowledgeBase?: SheetsKnowledgeBase;
+};
+
+type AutoInboxAnalysisResult = {
+  intent: string;
+  confidence: number;
+  summary: string;
+  requiresHumanReview: boolean;
+  matchedQuestions: Array<{
+    question: string;
+    answer: string;
+    source: string;
+  }>;
+  draft: string;
+  activityItems: string[];
+};
+
+type AIProviderId =
+  | "openai"
+  | "deepseek"
+  | "anthropic"
+  | "moonshot"
+  | "custom-openai-compatible";
+
+type AIProviderProtocol = "openai-responses" | "openai-chat" | "anthropic-messages";
+
+type AIProviderConfig = {
+  id: AIProviderId;
+  label: string;
+  protocol: AIProviderProtocol;
+  apiKey: string | null;
+  apiKeyEnv: string;
+  model: string;
+  baseUrl: string;
+  jsonMode: boolean;
+};
+
 type StoredSheetsConnection = {
   spreadsheetId: string;
   spreadsheetTitle: string;
@@ -95,6 +140,43 @@ const googleAuthUrl = "https://accounts.google.com/o/oauth2/v2/auth";
 const googleTokenUrl = "https://oauth2.googleapis.com/token";
 const tokenRefreshBufferMs = 60_000;
 const oauthTimeoutMs = 120_000;
+const analysisJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "intent",
+    "confidence",
+    "summary",
+    "requiresHumanReview",
+    "matchedQuestions",
+    "draft",
+    "activityItems",
+  ],
+  properties: {
+    intent: { type: "string" },
+    confidence: { type: "number" },
+    summary: { type: "string" },
+    requiresHumanReview: { type: "boolean" },
+    matchedQuestions: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["question", "answer", "source"],
+        properties: {
+          question: { type: "string" },
+          answer: { type: "string" },
+          source: { type: "string" },
+        },
+      },
+    },
+    draft: { type: "string" },
+    activityItems: {
+      type: "array",
+      items: { type: "string" },
+    },
+  },
+} as const;
 
 let mainWindow: BrowserWindow | null = null;
 let cachedSession: StoredGmailSession | null = null;
@@ -222,6 +304,12 @@ function registerGmailIpc() {
       return appendSheetsActivity(accessToken, spreadsheetId, request?.row);
     },
   );
+
+  ipcMain.handle("ai:get-status", async () => getOpenAIStatus());
+
+  ipcMain.handle("ai:analyze-email", async (_event, request?: AutoInboxAnalysisRequest) => {
+    return analyzeEmailWithOpenAI(request);
+  });
 }
 
 async function connectGmail(scopes: readonly string[]) {
@@ -546,6 +634,292 @@ async function appendSheetsActivity(
   return response.updates ?? {};
 }
 
+function getOpenAIStatus() {
+  const provider = getAIProviderConfig();
+  return {
+    status: provider.apiKey ? "configured" : "missing-key",
+    mode: "desktop-llm",
+    provider: provider.id,
+      providerLabel: provider.label,
+      model: provider.model,
+      apiKeyEnv: provider.apiKeyEnv,
+      baseUrl: provider.baseUrl,
+    };
+}
+
+async function analyzeEmailWithOpenAI(
+  request?: AutoInboxAnalysisRequest,
+): Promise<AutoInboxAnalysisResult> {
+  const provider = getAIProviderConfig();
+  if (!provider.apiKey) {
+    throw new Error(`Missing ${provider.apiKeyEnv}. Add it to .env before generating AI replies.`);
+  }
+
+  const email = request?.email;
+  if (!email?.subject || !email.bodyText) {
+    throw new Error("Missing email subject or body for AI analysis.");
+  }
+
+  const knowledgeBase = request?.knowledgeBase ?? { faq: [], rules: [] };
+  const promptPayload = buildAIPromptPayload(email, knowledgeBase);
+
+  if (provider.protocol === "anthropic-messages") {
+    return analyzeWithAnthropicMessages(provider, promptPayload);
+  }
+
+  if (provider.protocol === "openai-chat") {
+    return analyzeWithOpenAICompatibleChat(provider, promptPayload);
+  }
+
+  return analyzeWithOpenAIResponses(provider, promptPayload);
+}
+
+async function analyzeWithOpenAIResponses(
+  provider: AIProviderConfig,
+  promptPayload: Record<string, unknown>,
+) {
+  const response = await fetch(`${provider.baseUrl.replace(/\/$/, "")}/responses`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${provider.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: provider.model,
+      instructions: getAIInstructions(),
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: JSON.stringify(promptPayload, null, 2),
+            },
+          ],
+        },
+      ],
+      max_output_tokens: 900,
+      temperature: 0.2,
+      store: false,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "auto_inbox_analysis",
+          strict: true,
+          schema: analysisJsonSchema,
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`${provider.label} Responses API failed: ${await response.text()}`);
+  }
+
+  const payload = (await response.json()) as unknown;
+  return normalizeOpenAIAnalysis(payload);
+}
+
+async function analyzeWithOpenAICompatibleChat(
+  provider: AIProviderConfig,
+  promptPayload: Record<string, unknown>,
+) {
+  const response = await fetch(getChatCompletionsUrl(provider.baseUrl), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${provider.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: provider.model,
+      messages: [
+        { role: "system", content: `${getAIInstructions()} Return only valid JSON.` },
+        { role: "user", content: JSON.stringify(promptPayload, null, 2) },
+      ],
+      temperature: 0.2,
+      max_tokens: 900,
+      stream: false,
+      ...(provider.jsonMode ? { response_format: { type: "json_object" } } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`${provider.label} Chat Completions API failed: ${await response.text()}`);
+  }
+
+  const payload = (await response.json()) as unknown;
+  return normalizeJSONAnalysis(extractChatCompletionText(payload));
+}
+
+async function analyzeWithAnthropicMessages(
+  provider: AIProviderConfig,
+  promptPayload: Record<string, unknown>,
+) {
+  const response = await fetch(`${provider.baseUrl.replace(/\/$/, "")}/v1/messages`, {
+    method: "POST",
+    headers: {
+      "x-api-key": provider.apiKey ?? "",
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: provider.model,
+      max_tokens: 900,
+      temperature: 0.2,
+      system: `${getAIInstructions()} Return only valid JSON.`,
+      messages: [
+        {
+          role: "user",
+          content: JSON.stringify(promptPayload, null, 2),
+        },
+      ],
+      output_config: {
+        format: {
+          type: "json_schema",
+          schema: analysisJsonSchema,
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`${provider.label} Messages API failed: ${await response.text()}`);
+  }
+
+  const payload = (await response.json()) as unknown;
+  return normalizeJSONAnalysis(extractAnthropicMessageText(payload));
+}
+
+function normalizeOpenAIAnalysis(payload: unknown): AutoInboxAnalysisResult {
+  const text = extractOpenAIOutputText(payload);
+  return normalizeJSONAnalysis(text);
+}
+
+function normalizeJSONAnalysis(value: string): AutoInboxAnalysisResult {
+  const parsed = JSON.parse(extractJSONText(value)) as Partial<AutoInboxAnalysisResult>;
+  return {
+    intent: String(parsed.intent ?? "general"),
+    confidence: clampNumber(parsed.confidence, 0, 100),
+    summary: String(parsed.summary ?? ""),
+    requiresHumanReview: true,
+    matchedQuestions: Array.isArray(parsed.matchedQuestions)
+      ? parsed.matchedQuestions.map((match) => ({
+          question: String(match.question ?? ""),
+          answer: String(match.answer ?? ""),
+          source: String(match.source ?? "Knowledge base"),
+        }))
+      : [],
+    draft: String(parsed.draft ?? ""),
+    activityItems: Array.isArray(parsed.activityItems)
+      ? parsed.activityItems.map((item) => String(item))
+      : [],
+  };
+}
+
+function buildAIPromptPayload(
+  email: NonNullable<AutoInboxAnalysisRequest["email"]>,
+  knowledgeBase: SheetsKnowledgeBase,
+) {
+  return {
+    email: {
+      id: email.id ?? "",
+      sender: email.sender ?? "Customer",
+      senderEmail: email.senderEmail ?? "",
+      subject: email.subject,
+      bodyText: email.bodyText,
+    },
+    knowledgeBase: {
+      faq: knowledgeBase.faq.slice(0, 20),
+      rules: knowledgeBase.rules.slice(0, 20),
+    },
+    outputRequirements: {
+      draftLanguage: "Use the same language as the customer when obvious; otherwise use English.",
+      tone: "professional, direct, helpful",
+      reviewMode: "create a draft for a human reviewer, never auto-send",
+      jsonShape: {
+        intent: "short label",
+        confidence: "number from 0 to 100",
+        summary: "one sentence",
+        requiresHumanReview: true,
+        matchedQuestions: [{ question: "string", answer: "string", source: "string" }],
+        draft: "email draft body",
+        activityItems: ["short audit log items"],
+      },
+    },
+  };
+}
+
+function getAIInstructions() {
+  return "You are Auto-inbox, a cautious human-in-the-loop support assistant. Classify the email, pick only relevant FAQ/rule context, and draft a concise reply. Do not claim that an order, invoice, refund, account, or shipment has been checked unless that fact appears in the provided context. If verification is needed, ask for the minimum missing detail. Always require human review.";
+}
+
+function extractOpenAIOutputText(payload: unknown): string {
+  if (isRecord(payload) && typeof payload.output_text === "string") {
+    return payload.output_text;
+  }
+
+  if (!isRecord(payload) || !Array.isArray(payload.output)) {
+    throw new Error("OpenAI response did not include output text.");
+  }
+
+  for (const item of payload.output) {
+    if (!isRecord(item) || !Array.isArray(item.content)) continue;
+    for (const content of item.content) {
+      if (isRecord(content) && typeof content.text === "string") return content.text;
+      if (isRecord(content) && typeof content.output_text === "string") {
+        return content.output_text;
+      }
+    }
+  }
+
+  throw new Error("OpenAI response did not include output text.");
+}
+
+function extractChatCompletionText(payload: unknown) {
+  if (!isRecord(payload) || !Array.isArray(payload.choices)) {
+    throw new Error("Chat completion response did not include choices.");
+  }
+
+  const firstChoice = payload.choices[0];
+  if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) {
+    throw new Error("Chat completion response did not include a message.");
+  }
+
+  const content = firstChoice.message.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => (isRecord(item) && typeof item.text === "string" ? item.text : ""))
+      .join("");
+  }
+
+  throw new Error("Chat completion response did not include text content.");
+}
+
+function extractAnthropicMessageText(payload: unknown) {
+  if (!isRecord(payload) || !Array.isArray(payload.content)) {
+    throw new Error("Anthropic response did not include content.");
+  }
+
+  return payload.content
+    .map((item) => (isRecord(item) && typeof item.text === "string" ? item.text : ""))
+    .join("");
+}
+
+function extractJSONText(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) return trimmed.slice(firstBrace, lastBrace + 1);
+
+  throw new Error("AI response did not include valid JSON.");
+}
+
 async function sheetsFetch<T>(
   accessToken: string,
   pathSuffix: string,
@@ -742,6 +1116,102 @@ function getOAuthClientSecret() {
   return process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? process.env.VITE_GOOGLE_OAUTH_CLIENT_SECRET ?? null;
 }
 
+function getAIProviderConfig(): AIProviderConfig {
+  const provider = normalizeAIProvider(process.env.AI_PROVIDER);
+  const sharedModel = process.env.AI_MODEL;
+  const sharedBaseUrl = process.env.AI_BASE_URL;
+  const sharedApiKey = process.env.AI_API_KEY;
+
+  if (provider === "deepseek") {
+    return {
+      id: "deepseek",
+      label: "DeepSeek",
+      protocol: "openai-chat",
+      apiKey: sharedApiKey ?? process.env.DEEPSEEK_API_KEY ?? null,
+      apiKeyEnv: sharedApiKey ? "AI_API_KEY" : "DEEPSEEK_API_KEY",
+      model: sharedModel ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
+      baseUrl: sharedBaseUrl ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
+      jsonMode: getBooleanEnv("AI_JSON_MODE", true),
+    };
+  }
+
+  if (provider === "anthropic") {
+    return {
+      id: "anthropic",
+      label: "Claude",
+      protocol: "anthropic-messages",
+      apiKey: sharedApiKey ?? process.env.ANTHROPIC_API_KEY ?? null,
+      apiKeyEnv: sharedApiKey ? "AI_API_KEY" : "ANTHROPIC_API_KEY",
+      model: sharedModel ?? process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6",
+      baseUrl: sharedBaseUrl ?? process.env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com",
+      jsonMode: false,
+    };
+  }
+
+  if (provider === "moonshot") {
+    return {
+      id: "moonshot",
+      label: "Kimi / Moonshot",
+      protocol: "openai-chat",
+      apiKey: sharedApiKey ?? process.env.MOONSHOT_API_KEY ?? null,
+      apiKeyEnv: sharedApiKey ? "AI_API_KEY" : "MOONSHOT_API_KEY",
+      model: sharedModel ?? process.env.MOONSHOT_MODEL ?? "kimi-k2.6",
+      baseUrl: sharedBaseUrl ?? process.env.MOONSHOT_BASE_URL ?? "https://api.moonshot.ai/v1",
+      jsonMode: getBooleanEnv("AI_JSON_MODE", true),
+    };
+  }
+
+  if (provider === "custom-openai-compatible") {
+    return {
+      id: "custom-openai-compatible",
+      label: "Custom OpenAI-compatible",
+      protocol: "openai-chat",
+      apiKey: sharedApiKey ?? null,
+      apiKeyEnv: "AI_API_KEY",
+      model: sharedModel ?? "custom-model",
+      baseUrl: sharedBaseUrl ?? "http://127.0.0.1:1234/v1",
+      jsonMode: getBooleanEnv("AI_JSON_MODE", false),
+    };
+  }
+
+  return {
+    id: "openai",
+    label: "OpenAI",
+    protocol: "openai-responses",
+    apiKey: sharedApiKey ?? process.env.OPENAI_API_KEY ?? null,
+    apiKeyEnv: sharedApiKey ? "AI_API_KEY" : "OPENAI_API_KEY",
+    model: sharedModel ?? process.env.OPENAI_MODEL ?? "gpt-5-mini",
+    baseUrl: sharedBaseUrl ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
+    jsonMode: false,
+  };
+}
+
+function normalizeAIProvider(value?: string): AIProviderId {
+  const normalized = (value ?? "openai").trim().toLowerCase();
+  if (normalized === "claude" || normalized === "anthropic") return "anthropic";
+  if (normalized === "kimi" || normalized === "moonshot") return "moonshot";
+  if (normalized === "deepseek") return "deepseek";
+  if (normalized === "custom" || normalized === "openai-compatible") {
+    return "custom-openai-compatible";
+  }
+  return "openai";
+}
+
+function getChatCompletionsUrl(baseUrl: string) {
+  const normalized = baseUrl.replace(/\/$/, "");
+  return normalized.endsWith("/chat/completions")
+    ? normalized
+    : `${normalized}/chat/completions`;
+}
+
+function getBooleanEnv(name: string, fallback: boolean) {
+  const value = process.env[name];
+  if (value === undefined) return fallback;
+  return ["1", "true", "yes", "y", "si", "s\u00ed", "on"].includes(
+    value.trim().toLowerCase(),
+  );
+}
+
 async function loadLocalEnv() {
   const envPaths = [path.join(process.cwd(), ".env"), path.join(app.getPath("userData"), ".env")];
 
@@ -843,4 +1313,14 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function clampNumber(value: unknown, min: number, max: number) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return min;
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
 }
