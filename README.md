@@ -11,7 +11,7 @@ Auto-inbox is an open-source AI inbox assistant for teams that want faster custo
 
 ## Overview
 
-Auto-inbox turns the workflow of an AI email responder into a product-ready interface. The current version is a polished frontend prototype built for portfolio and open-source iteration. It uses realistic demo data so anyone can explore the experience without connecting Gmail, Google Sheets, or OpenAI credentials, and it already includes desktop-ready Google OAuth bridge layers for Gmail and Sheets.
+Auto-inbox turns the workflow of an AI email responder into a product-ready interface. The browser build still uses realistic demo data so anyone can explore the experience without credentials, while the Electron desktop build can connect Gmail, Google Sheets, and a configurable AI provider for a local MVP flow.
 
 The product direction is intentionally human-in-the-loop: AI prepares the response, but the user reviews and sends it manually.
 
@@ -25,6 +25,8 @@ The product direction is intentionally human-in-the-loop: AI prepares the respon
 - Desktop-ready Gmail OAuth connection panel with sync state, history ID tracking, and least-privilege scopes.
 - Configurable Gmail heartbeat for automatic inbox checks and duplicate skipping.
 - Google Sheets MVP integration for FAQ rows, automation rules, and activity logs.
+- Configurable AI-backed intent detection and draft generation in desktop mode.
+- Gmail draft creation for manual review before sending.
 - Automation status panel and activity log for observability.
 - English and Spanish interface language toggle while keeping email content untouched.
 - Responsive layout with no horizontal overflow on mobile.
@@ -86,9 +88,77 @@ To test real Gmail OAuth locally, create a Google Cloud OAuth client for a deskt
 ```bash
 GOOGLE_OAUTH_CLIENT_ID=your-client-id
 GOOGLE_OAUTH_CLIENT_SECRET=optional-client-secret
+AI_PROVIDER=openai
+AI_API_KEY=your-provider-api-key
+AI_MODEL=gpt-5-mini
 ```
 
 The app also reads a local `.env` file during desktop startup. The web-only Vite build still works without Gmail credentials.
+
+## AI Provider Configuration
+
+In desktop mode, the Electron process calls the selected AI provider so API keys are not stored in the React frontend. Auto-inbox sends the selected email body plus the active FAQ and Rules rows, asks for JSON, and writes the returned intent, confidence, FAQ matches, activity items, and suggested reply back into the inbox UI.
+
+Set `AI_PROVIDER` to one of:
+
+```text
+openai
+deepseek
+anthropic
+moonshot
+custom-openai-compatible
+```
+
+Recommended examples:
+
+```bash
+# OpenAI
+AI_PROVIDER=openai
+AI_API_KEY=your-openai-api-key
+AI_MODEL=gpt-5-mini
+
+# DeepSeek
+AI_PROVIDER=deepseek
+AI_API_KEY=your-deepseek-api-key
+AI_MODEL=deepseek-v4-flash
+
+# Claude / Anthropic
+AI_PROVIDER=anthropic
+AI_API_KEY=your-anthropic-api-key
+AI_MODEL=claude-sonnet-4-6
+
+# Kimi / Moonshot
+AI_PROVIDER=moonshot
+AI_API_KEY=your-moonshot-api-key
+AI_MODEL=kimi-k2.6
+
+# Any OpenAI-compatible local or hosted server
+AI_PROVIDER=custom-openai-compatible
+AI_API_KEY=your-api-key
+AI_MODEL=your-model
+AI_BASE_URL=http://127.0.0.1:1234/v1
+```
+
+Provider-specific variables also work, such as `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, and `MOONSHOT_API_KEY`. If no key is configured, the app keeps running with the demo AI bridge.
+
+Provider defaults:
+
+| Provider | Protocol | Default base URL | Default model | API key env |
+| --- | --- | --- | --- | --- |
+| `openai` | Responses API with JSON schema | `https://api.openai.com/v1` | `gpt-5-mini` | `AI_API_KEY` or `OPENAI_API_KEY` |
+| `deepseek` | OpenAI-compatible Chat Completions with JSON mode | `https://api.deepseek.com` | `deepseek-v4-flash` | `AI_API_KEY` or `DEEPSEEK_API_KEY` |
+| `anthropic` | Claude Messages API with `output_config.format` | `https://api.anthropic.com` | `claude-sonnet-4-6` | `AI_API_KEY` or `ANTHROPIC_API_KEY` |
+| `moonshot` | OpenAI-compatible Chat Completions with JSON mode | `https://api.moonshot.ai/v1` | `kimi-k2.6` | `AI_API_KEY` or `MOONSHOT_API_KEY` |
+| `custom-openai-compatible` | OpenAI-compatible Chat Completions | `http://127.0.0.1:1234/v1` | `custom-model` | `AI_API_KEY` |
+
+For custom OpenAI-compatible servers, set `AI_BASE_URL` to the server's `/v1` base URL. Auto-inbox appends `/chat/completions` unless the value already ends with that path. `AI_JSON_MODE=true` sends `response_format: {"type":"json_object"}`; it defaults to `true` for DeepSeek and Kimi/Moonshot, and `false` for custom servers because local gateways vary.
+
+Reference docs:
+
+- OpenAI models and Responses API: https://platform.openai.com/docs/models
+- DeepSeek quick start and JSON output: https://api-docs.deepseek.com/
+- Claude Messages API and structured outputs: https://platform.claude.com/docs/en/api/overview
+- Kimi/Moonshot API overview and JSON mode: https://platform.kimi.ai/docs/api/overview
 
 ## Google Sheets MVP
 
@@ -112,14 +182,12 @@ In desktop mode, the Electron bridge requests the `https://www.googleapis.com/au
 
 ## Automation Engine
 
-The inbox sync logic is separated from the React UI under `src/automation`. The current engine owns Gmail sync execution, heartbeat scheduling helpers, local heartbeat persistence, and duplicate detection through a bounded `seenMessageIds` cache. This keeps the UI focused on state and controls while leaving the automation flow ready for OpenAI classification and reply generation.
+The inbox sync logic is separated from the React UI under `src/automation`. The current engine owns Gmail sync execution, heartbeat scheduling helpers, local heartbeat persistence, duplicate detection through a bounded `seenMessageIds` cache, and returns newly loaded Gmail messages so the UI can classify and draft replies.
 
 ## Product Roadmap
 
 - Settings UI for Gmail OAuth client configuration.
 - Google Picker support for choosing a spreadsheet without pasting an ID.
-- OpenAI-powered classification and reply generation.
-- Real Gmail draft creation before sending.
 - Safety rules for newsletters, billing, legal, and sensitive support cases.
 - Desktop installer polish, app icon, and signed releases.
 - Optional hosted SaaS mode for always-on automation.
