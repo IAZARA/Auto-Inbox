@@ -2,21 +2,27 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import {
   Archive,
+  AlertTriangle,
   ArrowLeft,
   AtSign,
+  BarChart3,
   Bold,
   Bot,
   Check,
+  CheckCircle2,
   ChevronDown,
   Clock3,
+  ClipboardCheck,
   FilePenLine,
   Filter,
+  Gauge,
   Hexagon,
   Inbox,
   Info,
   Italic,
   Link,
   List,
+  ListChecks,
   Mail,
   MoreVertical,
   Pause,
@@ -28,10 +34,16 @@ import {
   Send,
   Settings,
   Shield,
+  ShieldCheck,
   Sparkles,
+  Store,
   Tag,
+  Target,
   Trash2,
   Undo2,
+  UserCheck,
+  Users,
+  XCircle,
 } from "lucide-react";
 import { canRunGmailSync, runGmailInboxSync } from "./automation/inboxEngine";
 import {
@@ -107,6 +119,32 @@ type SourceKey =
 type SatisfactionKey = "positive" | "neutral" | "new";
 type LastContactKey = "today" | "yesterday" | "twoDaysAgo" | "threeDaysAgo" | "oneWeekAgo" | "tuesday";
 type IntegrationTone = "connected" | "syncing" | "idle" | "error";
+type SupportVertical = "ecommerce" | "agency" | "saas";
+type BrandTone = "warm" | "direct" | "premium";
+type ReplyLanguageMode = "customer" | "interface";
+type SafetyAction = "draft" | "verify" | "escalate" | "doNotReply";
+type ReviewCheckKey = "facts" | "safety" | "tone";
+
+type WorkspaceProfile = {
+  vertical: SupportVertical;
+  tone: BrandTone;
+  replyLanguageMode: ReplyLanguageMode;
+  minConfidence: number;
+};
+
+type ReviewState = Partial<Record<ReviewCheckKey, boolean>> & {
+  accepted?: boolean;
+  edited?: boolean;
+  escalated?: boolean;
+  rejected?: boolean;
+};
+
+type SafetyDecision = {
+  action: SafetyAction;
+  label: string;
+  description: string;
+  reasons: string[];
+};
 
 type MailItem = {
   id: string;
@@ -151,6 +189,16 @@ type LocaleContent = {
 };
 
 const themeStorageKey = "auto-inbox:theme";
+const workspaceProfileStorageKey = "auto-inbox:workspace-profile";
+
+const reviewCheckKeys: ReviewCheckKey[] = ["facts", "safety", "tone"];
+
+const defaultWorkspaceProfile: WorkspaceProfile = {
+  vertical: "ecommerce",
+  tone: "warm",
+  replyLanguageMode: "customer",
+  minConfidence: 85,
+};
 
 const copy = {
   en: {
@@ -185,6 +233,94 @@ const copy = {
       activityLog: "Activity log",
     },
     connected: "Connected",
+    productTagline: "Human-reviewed ecommerce support",
+    positioning: {
+      short: "AI drafts. Humans approve.",
+      promise: "Built for teams that answer repetitive customer email every day.",
+      audience: "Best fit: ecommerce, SaaS support, agencies managing shared inboxes.",
+      volume: "Useful from 20+ customer emails/day; strongest when FAQs and rules repeat.",
+      notFit: "Not a fit for legal advice, medical support, hidden auto-send, or inboxes without human review.",
+    },
+    workspace: {
+      title: "Support workspace",
+      subtitle: "Tune the assistant around one clear operating model before drafting.",
+      vertical: "Primary niche",
+      tone: "Brand tone",
+      languageMode: "Reply language",
+      confidence: "Review threshold",
+      confidenceHelp: "Emails below this confidence stay flagged for slower review.",
+      verticals: {
+        ecommerce: "Ecommerce support",
+        agency: "Agency inbox ops",
+        saas: "SaaS support",
+      },
+      tones: {
+        warm: "Warm",
+        direct: "Direct",
+        premium: "Premium",
+      },
+      languageModes: {
+        customer: "Match customer",
+        interface: "Use interface",
+      },
+      playbookTitle: "Operating playbook",
+      playbookItems: [
+        "Use Gmail for incoming messages and draft creation.",
+        "Use Sheets for FAQ, rules, activity, and manager visibility.",
+        "Let AI classify, find context, and draft; keep send outside automation.",
+      ],
+    },
+    review: {
+      title: "Human review gate",
+      subtitle: "A draft can only be created after these checks are confirmed.",
+      checks: {
+        facts: "FAQ/context matches the customer request",
+        safety: "Sensitive data, billing, account, and policy risks checked",
+        tone: "Tone, language, and next step fit the brand",
+      },
+      reject: "Reject",
+      rejected: "Rejected",
+      escalate: "Escalate",
+      escalated: "Escalated",
+      blocked: "Complete review checks to create a Gmail draft.",
+      unsafeBlocked: "This message should not create a draft from the assistant.",
+    },
+    safety: {
+      title: "Safety decision",
+      draft: "Draft allowed",
+      verify: "Verify first",
+      escalate: "Escalate",
+      doNotReply: "Do not draft",
+      draftDescription: "Low-risk support email. A reviewed Gmail draft is allowed.",
+      verifyDescription: "Needs identity, policy, or context verification before the reviewer creates a draft.",
+      escalateDescription: "Sensitive or high-risk case. Route to a human owner before replying.",
+      doNotReplyDescription: "Likely newsletter, automated mail, or no-reply message. Skip AI response.",
+      lowConfidence: "Confidence is below the workspace threshold.",
+      billingRisk: "Billing, invoice, refund, or payment topic needs verification.",
+      accountRisk: "Account access or login topic needs identity check.",
+      legalRisk: "Legal, chargeback, compliance, or complaint language detected.",
+      automatedRisk: "Newsletter, unsubscribe, automated, or no-reply signal detected.",
+      normalRisk: "No sensitive trigger detected.",
+    },
+    value: {
+      title: "Value metrics",
+      avgResponse: "Median reply prep",
+      coverage: "Draftable coverage",
+      flagged: "Needs review",
+      acceptance: "Draft acceptance",
+      edits: "Edited drafts",
+      escalations: "Escalations",
+      audit: "Activity rows",
+    },
+    onboarding: {
+      title: "Launch checklist",
+      progress: "Readiness",
+      gmail: "Connect Gmail with readonly + compose scopes",
+      sheets: "Connect Sheets with FAQ, Rules, Activity, Settings tabs",
+      ai: "Configure an AI provider or validate demo rules",
+      rules: "Load FAQ/rules and safety routing",
+      tone: "Choose niche, tone, language, and confidence threshold",
+    },
     gmail: {
       title: "Gmail connection",
       description:
@@ -407,6 +543,94 @@ const copy = {
       activityLog: "Registro de actividad",
     },
     connected: "Conectado",
+    productTagline: "Soporte ecommerce con revision humana",
+    positioning: {
+      short: "La IA redacta. Humanos aprueban.",
+      promise: "Hecho para equipos que responden emails repetitivos de clientes todos los dias.",
+      audience: "Mejor encaje: ecommerce, soporte SaaS y agencias con buzones compartidos.",
+      volume: "Sirve desde 20+ emails de clientes por dia; rinde mas cuando FAQs y reglas se repiten.",
+      notFit: "No es para consejo legal, soporte medico, auto-envio oculto o buzones sin revision humana.",
+    },
+    workspace: {
+      title: "Mesa de soporte",
+      subtitle: "Ajusta el asistente a un modelo operativo claro antes de redactar.",
+      vertical: "Nicho principal",
+      tone: "Tono de marca",
+      languageMode: "Idioma de respuesta",
+      confidence: "Umbral de revision",
+      confidenceHelp: "Emails bajo este nivel quedan marcados para revision lenta.",
+      verticals: {
+        ecommerce: "Soporte ecommerce",
+        agency: "Operacion de agencia",
+        saas: "Soporte SaaS",
+      },
+      tones: {
+        warm: "Cercano",
+        direct: "Directo",
+        premium: "Premium",
+      },
+      languageModes: {
+        customer: "Igual al cliente",
+        interface: "Usar interfaz",
+      },
+      playbookTitle: "Playbook operativo",
+      playbookItems: [
+        "Usar Gmail para mensajes entrantes y creacion de borradores.",
+        "Usar Sheets para FAQ, reglas, actividad y visibilidad gerencial.",
+        "La IA clasifica, busca contexto y redacta; el envio queda fuera de la automatizacion.",
+      ],
+    },
+    review: {
+      title: "Puerta de revision humana",
+      subtitle: "Solo se puede crear un borrador despues de confirmar estos controles.",
+      checks: {
+        facts: "FAQ/contexto coincide con el pedido del cliente",
+        safety: "Datos sensibles, facturacion, cuenta y riesgos de politica revisados",
+        tone: "Tono, idioma y proximo paso calzan con la marca",
+      },
+      reject: "Rechazar",
+      rejected: "Rechazado",
+      escalate: "Escalar",
+      escalated: "Escalado",
+      blocked: "Completa los controles para crear un borrador Gmail.",
+      unsafeBlocked: "Este mensaje no deberia generar un borrador desde el asistente.",
+    },
+    safety: {
+      title: "Decision de seguridad",
+      draft: "Borrador permitido",
+      verify: "Verificar primero",
+      escalate: "Escalar",
+      doNotReply: "No redactar",
+      draftDescription: "Email de soporte de bajo riesgo. Se permite un borrador Gmail revisado.",
+      verifyDescription: "Requiere verificar identidad, politica o contexto antes de crear borrador.",
+      escalateDescription: "Caso sensible o de alto riesgo. Derivar a una persona responsable antes de responder.",
+      doNotReplyDescription: "Probable newsletter, correo automatico o no-reply. Omitir respuesta IA.",
+      lowConfidence: "La confianza esta bajo el umbral de la mesa.",
+      billingRisk: "Facturacion, factura, reembolso o pago requiere verificacion.",
+      accountRisk: "Acceso de cuenta o login requiere chequeo de identidad.",
+      legalRisk: "Se detecto lenguaje legal, contracargo, compliance o reclamo.",
+      automatedRisk: "Se detecto newsletter, unsubscribe, automatico o no-reply.",
+      normalRisk: "No se detecto riesgo sensible.",
+    },
+    value: {
+      title: "Metricas de valor",
+      avgResponse: "Preparacion mediana",
+      coverage: "Cobertura redactable",
+      flagged: "Necesita revision",
+      acceptance: "Aceptacion de borradores",
+      edits: "Borradores editados",
+      escalations: "Escalaciones",
+      audit: "Filas de actividad",
+    },
+    onboarding: {
+      title: "Checklist de lanzamiento",
+      progress: "Preparacion",
+      gmail: "Conectar Gmail con permisos readonly + compose",
+      sheets: "Conectar Sheets con pestanas FAQ, Rules, Activity, Settings",
+      ai: "Configurar proveedor IA o validar reglas demo",
+      rules: "Cargar FAQ/reglas y ruteo de seguridad",
+      tone: "Elegir nicho, tono, idioma y umbral de confianza",
+    },
     gmail: {
       title: "Conexi\u00f3n Gmail",
       description:
@@ -790,6 +1014,58 @@ const demoMails: MailItem[] = [
       satisfactionKey: "positive",
     },
   },
+  {
+    id: "demo-8",
+    sender: "Nora Miller",
+    initials: "N",
+    email: "nora.miller@email.com",
+    subject: "Chargeback and legal complaint",
+    preview: "I am opening a chargeback and will contact my lawyer if this is not fixed...",
+    body: [
+      "Hello,",
+      "I am opening a chargeback and will contact my lawyer if this refund is not fixed today.",
+      "The order arrived damaged and I already sent photos last week.",
+      "Nora",
+    ],
+    intentKey: "returnRequest",
+    confidence: 72,
+    timeKey: "tuesday",
+    status: "waiting",
+    accent: "rose",
+    sourceKey: "returns",
+    answer:
+      "Hi Nora,\n\nThanks for contacting us. I am sorry this has not been resolved yet. I will route this to a support lead for review because it involves a refund dispute and prior evidence.\n\nBest regards,\nSupport Team",
+    history: {
+      conversations: 4,
+      lastContactKey: "oneWeekAgo",
+      satisfactionKey: "neutral",
+    },
+  },
+  {
+    id: "demo-9",
+    sender: "Partner Updates",
+    initials: "P",
+    email: "newsletter@vendor.example",
+    subject: "June partner newsletter",
+    preview: "This automated newsletter includes product updates and an unsubscribe link...",
+    body: [
+      "This is an automated partner newsletter.",
+      "You are receiving this because your team subscribed to monthly updates.",
+      "Unsubscribe here if you no longer want to receive these emails.",
+    ],
+    intentKey: "unknown",
+    confidence: 38,
+    timeKey: "tuesday",
+    status: "waiting",
+    accent: "violet",
+    sourceKey: "general",
+    answer: "",
+    history: {
+      conversations: 0,
+      lastContactKey: "tuesday",
+      satisfactionKey: "new",
+    },
+  },
 ];
 
 const localizedContent: Record<Language, LocaleContent> = {
@@ -929,6 +1205,10 @@ function AutoInboxApp() {
   const [processingIds, setProcessingIds] = React.useState<string[]>([]);
   const [draftingId, setDraftingId] = React.useState<string | null>(null);
   const [sheetInput, setSheetInput] = React.useState("demo-auto-inbox-sheet");
+  const [workspaceProfile, setWorkspaceProfile] = React.useState<WorkspaceProfile>(() =>
+    loadPersistedWorkspaceProfile(),
+  );
+  const [reviewStates, setReviewStates] = React.useState<Record<string, ReviewState>>({});
   const [, setClockNow] = React.useState(() => Date.now());
 
   const t = copy[language];
@@ -947,11 +1227,42 @@ function AutoInboxApp() {
     selected.activityItems && selected.activityItems.length > 0
       ? selected.activityItems
       : content.activityItems;
+  const selectedSafety = getSafetyDecision(selected, workspaceProfile.minConfidence, t.safety);
+  const selectedReview = reviewStates[selected.id] ?? {};
+  const reviewChecklistComplete = reviewCheckKeys.every((key) => Boolean(selectedReview[key]));
+  const reviewBlocksDraft =
+    selectedSafety.action === "doNotReply" ||
+    selectedSafety.action === "escalate" ||
+    Boolean(selectedReview.rejected || selectedReview.escalated);
+  const readinessSteps = getOnboardingSteps({
+    labels: t.onboarding,
+    gmailSync,
+    sheetsSync,
+    aiStatus,
+    knowledgeBase,
+  });
+  const readinessScore = Math.round(
+    (readinessSteps.filter((step) => step.done).length / readinessSteps.length) * 100,
+  );
+  const valueMetrics = getValueMetrics({
+    labels: t.value,
+    mailItems,
+    reviewStates,
+    gmailDraftIds,
+    sentIds,
+    minConfidence: workspaceProfile.minConfidence,
+    activityRows: sheetsSync.activityRows,
+  });
   const folderCounts: Record<MailFolder, number> = {
     all: mailItems.length,
     unreplied: mailItems.filter((mail) => !sentIds.includes(mail.id) && !gmailDraftIds[mail.id])
       .length,
-    flagged: mailItems.filter((mail) => mail.confidence < 90 || mail.status === "draft").length,
+    flagged: mailItems.filter(
+      (mail) =>
+        mail.confidence < workspaceProfile.minConfidence ||
+        mail.status === "draft" ||
+        hasSensitiveSignal(mail),
+    ).length,
   };
   const aiBridgeAvailable = hasDesktopAIBridge();
   const aiIntegrationStatus = getAIStatusLabel(aiStatus, t.ai);
@@ -1046,6 +1357,10 @@ function AutoInboxApp() {
   }, [theme]);
 
   React.useEffect(() => {
+    persistWorkspaceProfile(workspaceProfile);
+  }, [workspaceProfile]);
+
+  React.useEffect(() => {
     let mounted = true;
 
     void getAutoInboxAIStatus()
@@ -1113,12 +1428,89 @@ function AutoInboxApp() {
       .includes(query.toLowerCase());
     if (!matchesQuery) return false;
     if (activeFolder === "unreplied") return !sentIds.includes(mail.id) && !gmailDraftIds[mail.id];
-    if (activeFolder === "flagged") return mail.confidence < 90 || mail.status === "draft";
+    if (activeFolder === "flagged") {
+      return (
+        mail.confidence < workspaceProfile.minConfidence ||
+        mail.status === "draft" ||
+        hasSensitiveSignal(mail)
+      );
+    }
     return true;
   });
 
+  const updateWorkspaceProfile = <Key extends keyof WorkspaceProfile>(
+    key: Key,
+    value: WorkspaceProfile[Key],
+  ) => {
+    setWorkspaceProfile((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateReviewCheck = (key: ReviewCheckKey, checked: boolean) => {
+    setReviewStates((current) => ({
+      ...current,
+      [selected.id]: {
+        ...current[selected.id],
+        [key]: checked,
+        rejected: false,
+        escalated: false,
+      },
+    }));
+  };
+
+  const updateReviewFlag = (flag: "rejected" | "escalated", value: boolean) => {
+    setReviewStates((current) => ({
+      ...current,
+      [selected.id]: {
+        ...current[selected.id],
+        [flag]: value,
+        accepted: value ? false : current[selected.id]?.accepted,
+      },
+    }));
+
+    setMailItems((current) =>
+      current.map((mail) =>
+        mail.id === selected.id
+          ? {
+              ...mail,
+              status: value ? "waiting" : mail.status,
+              activityItems: [
+                ...(mail.activityItems ?? []),
+                flag === "escalated" && value
+                  ? "Reviewer escalated this message"
+                  : flag === "rejected" && value
+                    ? "Reviewer rejected the suggested reply"
+                    : "Reviewer reopened the suggested reply",
+              ],
+            }
+          : mail,
+      ),
+    );
+  };
+
+  const updateDraftText = (value: string) => {
+    setDrafts((current) => ({ ...current, [selected.id]: value }));
+    setReviewStates((current) => ({
+      ...current,
+      [selected.id]: {
+        ...current[selected.id],
+        edited: value.trim() !== (selected.answer ?? "").trim(),
+        accepted: false,
+      },
+    }));
+  };
+
   const createDraftForSelected = async () => {
-    if (!draftText.trim() || selectedSent || selectedDraftCreated || queuePaused || draftingId) return;
+    if (
+      !draftText.trim() ||
+      selectedSent ||
+      selectedDraftCreated ||
+      queuePaused ||
+      draftingId ||
+      !reviewChecklistComplete ||
+      reviewBlocksDraft
+    ) {
+      return;
+    }
 
     setDraftingId(selected.id);
 
@@ -1137,6 +1529,15 @@ function AutoInboxApp() {
       }
 
       setGmailDraftIds((current) => ({ ...current, [selected.id]: draftId }));
+      setReviewStates((current) => ({
+        ...current,
+        [selected.id]: {
+          ...current[selected.id],
+          accepted: true,
+          rejected: false,
+          escalated: false,
+        },
+      }));
       setMailItems((current) =>
         current.map((mail) =>
           mail.id === selected.id
@@ -1379,10 +1780,25 @@ function AutoInboxApp() {
         source: match.source,
         sourceKey: "googleSheets" as SourceKey,
       }));
+      const draftLanguage =
+        workspaceProfile.replyLanguageMode === "interface" ? language : detectMailLanguage(mail);
+      const draft = applyBrandVoiceToDraft(result.draft, workspaceProfile, draftLanguage);
 
       setDrafts((current) => ({
         ...current,
-        [mail.id]: result.draft,
+        [mail.id]: draft,
+      }));
+      setReviewStates((current) => ({
+        ...current,
+        [mail.id]: {
+          facts: false,
+          safety: false,
+          tone: false,
+          edited: false,
+          accepted: false,
+          rejected: false,
+          escalated: false,
+        },
       }));
       setMailItems((current) =>
         current.map((item) =>
@@ -1393,7 +1809,7 @@ function AutoInboxApp() {
                 intentLabel: result.intent,
                 confidence: Math.round(result.confidence),
                 status: result.requiresHumanReview ? "draft" : "ready",
-                answer: result.draft,
+                answer: draft,
                 knowledgeMatches,
                 activityItems: result.activityItems.length
                   ? result.activityItems
@@ -1461,8 +1877,16 @@ function AutoInboxApp() {
           <div className="brand-mark">
             <Hexagon size={22} />
           </div>
-          <span>Auto-inbox</span>
+          <div className="brand-copy">
+            <span>Auto-inbox</span>
+            <small>{t.productTagline}</small>
+          </div>
         </div>
+
+        <section className="positioning-card">
+          <strong>{t.positioning.short}</strong>
+          <span>{t.positioning.volume}</span>
+        </section>
 
         <button
           className={`pause-processing ${queuePaused ? "is-paused" : ""}`}
@@ -1473,9 +1897,13 @@ function AutoInboxApp() {
         </button>
 
         <nav className="sidebar-section" aria-label={t.ariaMailbox}>
-          <NavItem icon={<Inbox size={17} />} label={t.nav.inbox} count={12} active />
-          <NavItem icon={<FilePenLine size={17} />} label={t.nav.drafts} count={8} />
-          <NavItem icon={<Send size={17} />} label={t.nav.sent} />
+          <NavItem icon={<Inbox size={17} />} label={t.nav.inbox} count={mailItems.length} active />
+          <NavItem
+            icon={<FilePenLine size={17} />}
+            label={t.nav.drafts}
+            count={Object.keys(gmailDraftIds).length}
+          />
+          <NavItem icon={<Send size={17} />} label={t.nav.sent} count={sentIds.length} />
           <NavItem icon={<Mail size={17} />} label={t.nav.allMail} />
           <NavItem icon={<Shield size={17} />} label={t.nav.spam} />
           <NavItem icon={<Trash2 size={17} />} label={t.nav.trash} />
@@ -1541,6 +1969,11 @@ function AutoInboxApp() {
       </aside>
 
       <section className="inbox-column">
+        <div className="inbox-brief">
+          <strong>{t.positioning.promise}</strong>
+          <span>{t.positioning.audience}</span>
+        </div>
+
         <div className="search-row">
           <label className="search-box">
             <Search size={17} />
@@ -1659,6 +2092,22 @@ function AutoInboxApp() {
           </div>
         </article>
 
+        <section className={`safety-card ${selectedSafety.action}`}>
+          <div className="section-heading">
+            <h2>
+              <SafetyIcon action={selectedSafety.action} />
+              {t.safety.title}
+            </h2>
+            <span className={`safety-pill ${selectedSafety.action}`}>{selectedSafety.label}</span>
+          </div>
+          <p>{selectedSafety.description}</p>
+          <div className="safety-reasons">
+            {selectedSafety.reasons.map((reason) => (
+              <span key={reason}>{reason}</span>
+            ))}
+          </div>
+        </section>
+
         <section className="knowledge-card">
           <div className="section-heading">
             <h2>{t.sections.knowledge}</h2>
@@ -1693,6 +2142,124 @@ function AutoInboxApp() {
       </section>
 
       <aside className="assistant-column">
+        <section className="workspace-card">
+          <div className="section-heading">
+            <h2>
+              <Store size={17} />
+              {t.workspace.title}
+            </h2>
+            <span className="readiness-badge">{readinessScore}%</span>
+          </div>
+          <p className="gmail-description">{t.workspace.subtitle}</p>
+
+          <div className="workspace-controls">
+            <label>
+              <span>{t.workspace.vertical}</span>
+              <select
+                value={workspaceProfile.vertical}
+                onChange={(event) =>
+                  updateWorkspaceProfile("vertical", event.target.value as SupportVertical)
+                }
+              >
+                {(Object.keys(t.workspace.verticals) as SupportVertical[]).map((vertical) => (
+                  <option value={vertical} key={vertical}>
+                    {t.workspace.verticals[vertical]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{t.workspace.tone}</span>
+              <select
+                value={workspaceProfile.tone}
+                onChange={(event) =>
+                  updateWorkspaceProfile("tone", event.target.value as BrandTone)
+                }
+              >
+                {(Object.keys(t.workspace.tones) as BrandTone[]).map((tone) => (
+                  <option value={tone} key={tone}>
+                    {t.workspace.tones[tone]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{t.workspace.languageMode}</span>
+              <select
+                value={workspaceProfile.replyLanguageMode}
+                onChange={(event) =>
+                  updateWorkspaceProfile(
+                    "replyLanguageMode",
+                    event.target.value as ReplyLanguageMode,
+                  )
+                }
+              >
+                {(Object.keys(t.workspace.languageModes) as ReplyLanguageMode[]).map((mode) => (
+                  <option value={mode} key={mode}>
+                    {t.workspace.languageModes[mode]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="confidence-control">
+            <span>
+              {t.workspace.confidence}
+              <strong>{workspaceProfile.minConfidence}%</strong>
+            </span>
+            <input
+              type="range"
+              min="60"
+              max="98"
+              value={workspaceProfile.minConfidence}
+              onChange={(event) =>
+                updateWorkspaceProfile("minConfidence", Number.parseInt(event.target.value, 10))
+              }
+            />
+            <small>{t.workspace.confidenceHelp}</small>
+          </label>
+
+          <div className="playbook-list">
+            <strong>{t.workspace.playbookTitle}</strong>
+            {t.workspace.playbookItems.map((item) => (
+              <span key={item}>
+                <CheckCircle2 size={14} />
+                {item}
+              </span>
+            ))}
+          </div>
+
+          <div className="fit-rules">
+            <span>
+              <Users size={14} />
+              {t.positioning.audience}
+            </span>
+            <span>
+              <Target size={14} />
+              {t.positioning.promise}
+            </span>
+            <span>
+              <AlertTriangle size={14} />
+              {t.positioning.notFit}
+            </span>
+          </div>
+        </section>
+
+        <section className="value-card">
+          <div className="section-heading">
+            <h2>
+              <BarChart3 size={17} />
+              {t.value.title}
+            </h2>
+          </div>
+          <div className="value-grid">
+            {valueMetrics.map((metric) => (
+              <Metric label={metric.label} value={metric.value} key={metric.label} />
+            ))}
+          </div>
+        </section>
+
         <section className="reply-panel">
           <div className="reply-heading">
             <h2>
@@ -1730,11 +2297,50 @@ function AutoInboxApp() {
           <textarea
             value={draftText}
             placeholder={t.noDraft}
-            onChange={(event) =>
-              setDrafts((current) => ({ ...current, [selected.id]: event.target.value }))
-            }
+            onChange={(event) => updateDraftText(event.target.value)}
             aria-label={t.generatedReply}
           />
+
+          <div className="review-panel">
+            <div>
+              <strong>
+                <ClipboardCheck size={15} />
+                {t.review.title}
+              </strong>
+              <span>{t.review.subtitle}</span>
+            </div>
+            <div className="review-checks">
+              {reviewCheckKeys.map((key) => (
+                <label key={key}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selectedReview[key])}
+                    onChange={(event) => updateReviewCheck(key, event.target.checked)}
+                    disabled={selectedSent || selectedDraftCreated}
+                  />
+                  <span>{t.review.checks[key]}</span>
+                </label>
+              ))}
+            </div>
+            <div className="review-actions">
+              <button
+                className={`ghost-button ${selectedReview.rejected ? "is-active-danger" : ""}`}
+                onClick={() => updateReviewFlag("rejected", !selectedReview.rejected)}
+                disabled={selectedSent || selectedDraftCreated}
+              >
+                <XCircle size={15} />
+                {selectedReview.rejected ? t.review.rejected : t.review.reject}
+              </button>
+              <button
+                className={`secondary-button ${selectedReview.escalated ? "is-active-warning" : ""}`}
+                onClick={() => updateReviewFlag("escalated", !selectedReview.escalated)}
+                disabled={selectedSent || selectedDraftCreated}
+              >
+                <UserCheck size={15} />
+                {selectedReview.escalated ? t.review.escalated : t.review.escalate}
+              </button>
+            </div>
+          </div>
 
           <div className="send-actions">
             <button className="secondary-button" onClick={() => void processMailWithAI(selected)}>
@@ -1750,7 +2356,9 @@ function AutoInboxApp() {
                 selectedSent ||
                 selectedDraftCreated ||
                 queuePaused ||
-                draftingId === selected.id
+                draftingId === selected.id ||
+                !reviewChecklistComplete ||
+                reviewBlocksDraft
               }
             >
               <Send size={18} />
@@ -1759,7 +2367,15 @@ function AutoInboxApp() {
             </button>
           </div>
 
-          <p className="draft-note">{t.draftNote}</p>
+          <p className="draft-note">
+            {reviewBlocksDraft
+              ? selectedSafety.action === "doNotReply"
+                ? t.review.unsafeBlocked
+                : t.review.blocked
+              : reviewChecklistComplete
+                ? t.draftNote
+                : t.review.blocked}
+          </p>
         </section>
 
         <section className="gmail-card">
@@ -1882,6 +2498,27 @@ function AutoInboxApp() {
           </div>
         </section>
 
+        <section className="onboarding-card">
+          <div className="section-heading">
+            <h2>
+              <ListChecks size={17} />
+              {t.onboarding.title}
+            </h2>
+            <span className="readiness-badge">{readinessScore}%</span>
+          </div>
+          <div className="readiness-meter" aria-label={`${t.onboarding.progress} ${readinessScore}%`}>
+            <span style={{ width: `${readinessScore}%` }} />
+          </div>
+          <div className="onboarding-list">
+            {readinessSteps.map((step) => (
+              <span className={step.done ? "done" : ""} key={step.label}>
+                {step.done ? <CheckCircle2 size={15} /> : <Clock3 size={15} />}
+                {step.label}
+              </span>
+            ))}
+          </div>
+        </section>
+
         <section className="sheets-card">
           <div className="section-heading">
             <h2>
@@ -1998,8 +2635,8 @@ function AutoInboxApp() {
             </span>
           </div>
           <div className="automation-grid">
-            <Metric label={t.metrics.nextCheckIn} value={queuePaused ? "--" : t.minuteValue} />
-            <Metric label={t.metrics.processedToday} value="48" />
+            <Metric label={t.metrics.nextCheckIn} value={queuePaused ? "--" : nextHeartbeatLabel} />
+            <Metric label={t.metrics.processedToday} value={String(gmailSync.newMessages || mailItems.length)} />
           </div>
         </section>
 
@@ -2067,6 +2704,236 @@ function IntegrationRow({
   );
 }
 
+function SafetyIcon({ action }: { action: SafetyAction }) {
+  if (action === "draft") return <ShieldCheck size={17} />;
+  if (action === "verify") return <Gauge size={17} />;
+  if (action === "doNotReply") return <XCircle size={17} />;
+  return <AlertTriangle size={17} />;
+}
+
+function getSafetyDecision(
+  mail: MailItem,
+  minConfidence: number,
+  labels: typeof copy.en.safety,
+): SafetyDecision {
+  const text = `${mail.sender} ${mail.email} ${mail.subject} ${mail.preview} ${mail.body.join(" ")}`.toLowerCase();
+  const reasons: string[] = [];
+  let action: SafetyAction = "draft";
+
+  if (isAutomatedMessage(text)) {
+    return {
+      action: "doNotReply",
+      label: labels.doNotReply,
+      description: labels.doNotReplyDescription,
+      reasons: [labels.automatedRisk],
+    };
+  }
+
+  if (mail.confidence < minConfidence) {
+    reasons.push(labels.lowConfidence);
+    action = "verify";
+  }
+
+  if (/(invoice|billing|refund|payment|card|charge|charged|cobro|factura|reembolso|pago)/i.test(text)) {
+    reasons.push(labels.billingRisk);
+    action = action === "draft" ? "verify" : action;
+  }
+
+  if (/(login|password|account access|account|reset|2fa|two-factor|cuenta|clave|contrasena)/i.test(text)) {
+    reasons.push(labels.accountRisk);
+    action = action === "draft" ? "verify" : action;
+  }
+
+  if (/(lawyer|legal|chargeback|lawsuit|attorney|compliance|complaint|denuncia|legal|contracargo)/i.test(text)) {
+    reasons.push(labels.legalRisk);
+    action = "escalate";
+  }
+
+  if (reasons.length === 0) {
+    reasons.push(labels.normalRisk);
+  }
+
+  if (action === "escalate") {
+    return {
+      action,
+      label: labels.escalate,
+      description: labels.escalateDescription,
+      reasons,
+    };
+  }
+
+  if (action === "verify") {
+    return {
+      action,
+      label: labels.verify,
+      description: labels.verifyDescription,
+      reasons,
+    };
+  }
+
+  return {
+    action,
+    label: labels.draft,
+    description: labels.draftDescription,
+    reasons,
+  };
+}
+
+function hasSensitiveSignal(mail: MailItem) {
+  const text = `${mail.sender} ${mail.email} ${mail.subject} ${mail.preview} ${mail.body.join(" ")}`.toLowerCase();
+  return (
+    isAutomatedMessage(text) ||
+    /(invoice|billing|refund|payment|card|chargeback|legal|lawyer|account|login|password|complaint)/i.test(
+      text,
+    )
+  );
+}
+
+function isAutomatedMessage(text: string) {
+  return /(newsletter|unsubscribe|no-reply|noreply|automated|do not reply|marketing update)/i.test(
+    text,
+  );
+}
+
+function getOnboardingSteps({
+  labels,
+  gmailSync,
+  sheetsSync,
+  aiStatus,
+  knowledgeBase,
+}: {
+  labels: typeof copy.en.onboarding;
+  gmailSync: GmailSyncSnapshot;
+  sheetsSync: SheetsSyncSnapshot;
+  aiStatus: AutoInboxAIStatus;
+  knowledgeBase: SheetsKnowledgeBase;
+}) {
+  return [
+    {
+      label: labels.gmail,
+      done: gmailSync.status === "connected",
+    },
+    {
+      label: labels.sheets,
+      done: sheetsSync.status === "connected",
+    },
+    {
+      label: labels.ai,
+      done: aiStatus.status === "configured" || aiStatus.status === "demo",
+    },
+    {
+      label: labels.rules,
+      done:
+        knowledgeBase.faq.length > 0 ||
+        knowledgeBase.rules.length > 0 ||
+        sheetsSync.ruleRows > 0,
+    },
+    {
+      label: labels.tone,
+      done: true,
+    },
+  ];
+}
+
+function getValueMetrics({
+  labels,
+  mailItems,
+  reviewStates,
+  gmailDraftIds,
+  sentIds,
+  minConfidence,
+  activityRows,
+}: {
+  labels: typeof copy.en.value;
+  mailItems: MailItem[];
+  reviewStates: Record<string, ReviewState>;
+  gmailDraftIds: Record<string, string>;
+  sentIds: string[];
+  minConfidence: number;
+  activityRows: number;
+}) {
+  const total = Math.max(mailItems.length, 1);
+  const draftable = mailItems.filter(
+    (mail) => mail.answer.trim() && !isAutomatedMessage(`${mail.subject} ${mail.preview}`.toLowerCase()),
+  ).length;
+  const flagged = mailItems.filter(
+    (mail) => mail.confidence < minConfidence || mail.status === "draft" || hasSensitiveSignal(mail),
+  ).length;
+  const accepted = new Set([
+    ...Object.keys(gmailDraftIds),
+    ...sentIds,
+    ...Object.entries(reviewStates)
+      .filter(([, state]) => state.accepted)
+      .map(([id]) => id),
+  ]).size;
+  const edited = Object.values(reviewStates).filter((state) => state.edited).length;
+  const escalated = Object.values(reviewStates).filter((state) => state.escalated).length;
+
+  return [
+    { label: labels.avgResponse, value: "2 min" },
+    { label: labels.coverage, value: formatPercent(draftable, total) },
+    { label: labels.flagged, value: String(flagged) },
+    { label: labels.acceptance, value: formatPercent(accepted, total) },
+    { label: labels.edits, value: String(edited) },
+    { label: labels.escalations, value: String(escalated) },
+    { label: labels.audit, value: String(activityRows) },
+  ];
+}
+
+function formatPercent(value: number, total: number) {
+  if (total <= 0) return "0%";
+  return `${Math.round((value / total) * 100)}%`;
+}
+
+function applyBrandVoiceToDraft(draft: string, profile: WorkspaceProfile, language: Language) {
+  const trimmed = draft.trim();
+  if (!trimmed) return trimmed;
+
+  const teamLabel =
+    profile.vertical === "agency"
+      ? "Inbox Operations Team"
+      : profile.vertical === "saas"
+        ? "Customer Success Team"
+        : "Customer Support Team";
+  const localizedTeamLabel =
+    language === "es"
+      ? profile.vertical === "agency"
+        ? "Equipo de Operaciones"
+        : profile.vertical === "saas"
+          ? "Equipo de Exito del Cliente"
+          : "Equipo de Soporte"
+      : teamLabel;
+  const toneLine =
+    profile.tone === "direct"
+      ? language === "es"
+        ? "Voy directo al proximo paso."
+        : "Here is the direct next step."
+      : profile.tone === "premium"
+        ? language === "es"
+          ? "Gracias por la paciencia; vamos a cuidarlo con detalle."
+          : "Thank you for your patience; we will handle this carefully."
+        : "";
+
+  const withSignature = trimmed.replace(/Support Team\s*$/i, localizedTeamLabel);
+  if (!toneLine || withSignature.includes(toneLine)) return withSignature;
+
+  const lines = withSignature.split("\n");
+  const greetingIndex = lines.findIndex((line) => line.trim().endsWith(","));
+  if (greetingIndex >= 0) {
+    lines.splice(greetingIndex + 1, 0, "", toneLine);
+    return lines.join("\n");
+  }
+
+  return `${toneLine}\n\n${withSignature}`;
+}
+
+function detectMailLanguage(mail: MailItem): Language {
+  const text = `${mail.subject} ${mail.preview} ${mail.body.join(" ")}`.toLowerCase();
+  return /\b(hola|gracias|pedido|factura|reembolso|envio|cuenta|por favor|buenas)\b/.test(text)
+    ? "es"
+    : "en";
+}
+
 function getIntegrationTone(status: GmailConnectionStatus): IntegrationTone {
   if (status === "connected") return "connected";
   if (status === "connecting" || status === "syncing") return "syncing";
@@ -2109,6 +2976,47 @@ function applyDocumentTheme(theme: Theme) {
 function persistTheme(theme: Theme) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(themeStorageKey, theme);
+}
+
+function loadPersistedWorkspaceProfile(): WorkspaceProfile {
+  if (typeof window === "undefined") return defaultWorkspaceProfile;
+
+  try {
+    const stored = window.localStorage.getItem(workspaceProfileStorageKey);
+    if (!stored) return defaultWorkspaceProfile;
+
+    const parsed = JSON.parse(stored) as Partial<WorkspaceProfile>;
+    return {
+      vertical: isSupportVertical(parsed.vertical) ? parsed.vertical : defaultWorkspaceProfile.vertical,
+      tone: isBrandTone(parsed.tone) ? parsed.tone : defaultWorkspaceProfile.tone,
+      replyLanguageMode: isReplyLanguageMode(parsed.replyLanguageMode)
+        ? parsed.replyLanguageMode
+        : defaultWorkspaceProfile.replyLanguageMode,
+      minConfidence:
+        typeof parsed.minConfidence === "number"
+          ? Math.min(98, Math.max(60, parsed.minConfidence))
+          : defaultWorkspaceProfile.minConfidence,
+    };
+  } catch {
+    return defaultWorkspaceProfile;
+  }
+}
+
+function persistWorkspaceProfile(profile: WorkspaceProfile) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(workspaceProfileStorageKey, JSON.stringify(profile));
+}
+
+function isSupportVertical(value: unknown): value is SupportVertical {
+  return value === "ecommerce" || value === "agency" || value === "saas";
+}
+
+function isBrandTone(value: unknown): value is BrandTone {
+  return value === "warm" || value === "direct" || value === "premium";
+}
+
+function isReplyLanguageMode(value: unknown): value is ReplyLanguageMode {
+  return value === "customer" || value === "interface";
 }
 
 function mergeMailItems(

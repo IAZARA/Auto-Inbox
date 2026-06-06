@@ -15,13 +15,20 @@ Auto-inbox turns the workflow of an AI email responder into a product-ready inte
 
 The product direction is intentionally human-in-the-loop: AI prepares the response, but the user reviews and sends it manually.
 
+The current app is positioned as a focused ecommerce/support workspace for small teams and agencies that handle repetitive customer email every day. It is useful from the first demo session, but the clearest production path is: Gmail for incoming messages and draft creation, Google Sheets for FAQ/rules/activity, an AI provider for classification and drafting, and a human reviewer who approves every reply.
+
 ## Highlights
 
 - Premium 4-column inbox dashboard inspired by modern email and support tools.
+- Clear support workspace controls for niche, brand tone, reply language, and confidence threshold.
 - Dark sidebar with mailbox, automation, integration, and mode controls.
 - Searchable inbox list with unread states and selected-message focus.
 - Email detail view with customer metadata, intent, confidence, FAQ matches, and history.
+- Safety decision engine for draft allowed, verify first, escalate, and do-not-draft cases.
+- Human review checklist that must be completed before a Gmail draft can be created.
 - AI suggested reply composer with formatting controls, regenerate action, and manual `Enviar` button.
+- Value metrics for prep time, draftable coverage, flagged volume, accepted drafts, edits, escalations, and activity rows.
+- Launch checklist for Gmail, Sheets, AI provider, rules, and workspace configuration.
 - Desktop-ready Gmail OAuth connection panel with sync state, history ID tracking, and least-privilege scopes.
 - Configurable Gmail heartbeat for automatic inbox checks and duplicate skipping.
 - Google Sheets MVP integration for FAQ rows, automation rules, and activity logs.
@@ -189,7 +196,7 @@ The inbox sync logic is separated from the React UI under `src/automation`. The 
 
 - Settings UI for Gmail OAuth client configuration.
 - Google Picker support for choosing a spreadsheet without pasting an ID.
-- Safety rules for newsletters, billing, legal, and sensitive support cases.
+- Configurable safety-rule editor for newsletters, billing, legal, and sensitive support cases.
 - Desktop installer polish, app icon, and signed releases.
 - Optional hosted SaaS mode for always-on automation.
 

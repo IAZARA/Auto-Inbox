@@ -232,7 +232,7 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 18px;
+  margin-bottom: 10px;
   color: var(--sidebar-strong);
   font-size: 13px;
   font-weight: 800;
@@ -248,6 +248,47 @@ textarea:focus-visible {
   color: var(--brand-mark-text);
   background: var(--brand-mark-bg);
   box-shadow: inset 0 0 0 1px var(--brand-mark-border);
+}
+
+.brand-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.brand-copy span,
+.brand-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-copy small {
+  color: var(--sidebar-heading);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.positioning-card {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  color: var(--sidebar-text);
+  background: var(--sidebar-control);
+}
+
+.positioning-card strong {
+  color: var(--sidebar-strong);
+  font-size: 12px;
+}
+
+.positioning-card span {
+  color: var(--sidebar-heading);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .pause-processing {
@@ -453,6 +494,27 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   padding: 18px 0 0;
+}
+
+.inbox-brief {
+  display: grid;
+  gap: 4px;
+  margin: 0 18px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--surface-muted);
+}
+
+.inbox-brief strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.inbox-brief span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .search-row {
@@ -789,6 +851,55 @@ textarea:focus-visible {
   border-color: var(--status-purple-border);
 }
 
+.safety-card p {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.safety-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--status-success-border);
+  border-radius: var(--radius-pill);
+  color: var(--status-success-text);
+  background: var(--status-success-bg);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.safety-pill.verify {
+  color: var(--status-warning-text);
+  background: var(--status-warning-bg);
+  border-color: var(--status-warning-border);
+}
+
+.safety-pill.escalate,
+.safety-pill.doNotReply {
+  color: var(--status-purple-text);
+  background: var(--status-purple-bg);
+  border-color: var(--status-purple-border);
+}
+
+.safety-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.safety-reasons span {
+  padding: 5px 8px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+  font-size: 12px;
+}
+
 .message-body {
   display: grid;
   gap: 12px;
@@ -809,6 +920,10 @@ textarea:focus-visible {
 .activity-card,
 .gmail-card,
 .sheets-card,
+.workspace-card,
+.value-card,
+.onboarding-card,
+.safety-card,
 .reply-panel {
   border: 1px solid var(--border-card);
   border-radius: var(--radius-card);
@@ -817,7 +932,8 @@ textarea:focus-visible {
 }
 
 .knowledge-card,
-.customer-history {
+.customer-history,
+.safety-card {
   margin-top: 20px;
   padding: 14px;
 }
@@ -840,14 +956,23 @@ textarea:focus-visible {
 }
 
 .gmail-card .section-heading h2,
-.sheets-card .section-heading h2 {
+.sheets-card .section-heading h2,
+.workspace-card .section-heading h2,
+.value-card .section-heading h2,
+.onboarding-card .section-heading h2,
+.safety-card .section-heading h2,
+.review-panel strong {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
 .gmail-card .section-heading h2 svg,
-.sheets-card .section-heading h2 svg {
+.sheets-card .section-heading h2 svg,
+.workspace-card .section-heading h2 svg,
+.value-card .section-heading h2 svg,
+.onboarding-card .section-heading h2 svg,
+.safety-card .section-heading h2 svg {
   color: var(--accent);
 }
 
@@ -934,6 +1059,147 @@ textarea:focus-visible {
   background: var(--surface-soft);
 }
 
+.workspace-card,
+.value-card,
+.onboarding-card {
+  padding: 14px;
+}
+
+.readiness-badge {
+  display: inline-grid;
+  min-width: 40px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--status-success-border);
+  border-radius: var(--radius-pill);
+  color: var(--status-success-text);
+  background: var(--status-success-bg);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workspace-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.workspace-controls label,
+.confidence-control {
+  display: grid;
+  gap: 6px;
+}
+
+.workspace-controls label > span,
+.confidence-control > span,
+.playbook-list > strong {
+  color: var(--text-subtle);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workspace-controls select {
+  min-height: 38px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 0 10px;
+  color: var(--text-primary);
+  background: var(--surface);
+  font-weight: 800;
+}
+
+.confidence-control {
+  margin-top: 10px;
+}
+
+.confidence-control > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.confidence-control strong {
+  color: var(--accent-strong);
+  font-size: 12px;
+}
+
+.confidence-control input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.confidence-control small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.playbook-list,
+.fit-rules,
+.onboarding-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.playbook-list span,
+.fit-rules span,
+.onboarding-list span {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.playbook-list svg,
+.fit-rules svg,
+.onboarding-list svg {
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.fit-rules {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.fit-rules span:last-child svg {
+  color: var(--status-warning-text);
+}
+
+.value-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.readiness-meter {
+  height: 8px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+}
+
+.readiness-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-strong);
+}
+
+.onboarding-list span {
+  color: var(--text-muted);
+}
+
+.onboarding-list span.done {
+  color: var(--text-secondary);
+}
+
 .reply-panel {
   padding: 16px;
 }
@@ -999,6 +1265,82 @@ textarea:focus-visible {
   font-size: 13px;
   line-height: 1.58;
   outline-color: var(--accent);
+}
+
+.review-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--surface-muted);
+}
+
+.review-panel > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.review-panel strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.review-panel strong svg {
+  color: var(--accent);
+}
+
+.review-panel > div:first-child span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.review-checks {
+  display: grid;
+  gap: 8px;
+}
+
+.review-checks label {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.review-checks input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.review-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.review-actions .secondary-button,
+.review-actions .ghost-button {
+  min-height: 34px;
+  font-size: 12px;
+}
+
+.ghost-button.is-active-danger {
+  color: var(--status-warning-text);
+  background: var(--status-warning-bg);
+  border-color: var(--status-warning-border);
+}
+
+.secondary-button.is-active-warning {
+  color: var(--status-purple-text);
+  background: var(--status-purple-bg);
+  border-color: var(--status-purple-border);
 }
 
 .send-actions {
@@ -1384,6 +1726,8 @@ textarea:focus-visible {
   .heartbeat-controls,
   .sheets-actions,
   .gmail-grid,
+  .value-grid,
+  .review-actions,
   .send-actions {
     grid-template-columns: 1fr;
   }
