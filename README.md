@@ -17,6 +17,8 @@ The product direction is intentionally human-in-the-loop: AI prepares the respon
 
 The current app is positioned as a focused ecommerce/support workspace for small teams and agencies that handle repetitive customer email every day. It is useful from the first demo session, but the clearest production path is: Gmail for incoming messages and draft creation, Google Sheets for FAQ/rules/activity, an AI provider for classification and drafting, and a human reviewer who approves every reply.
 
+The 100-question product audit is answered in [`docs/product-answers.md`](docs/product-answers.md) and mirrored inside the app through the 100-question audit card.
+
 ## Highlights
 
 - Premium 4-column inbox dashboard inspired by modern email and support tools.
@@ -25,9 +27,17 @@ The current app is positioned as a focused ecommerce/support workspace for small
 - Searchable inbox list with unread states and selected-message focus.
 - Email detail view with customer metadata, intent, confidence, FAQ matches, and history.
 - Safety decision engine for draft allowed, verify first, escalate, and do-not-draft cases.
+- Configurable safety rules for automated mail, billing, account access, legal topics, and custom escalation terms.
+- Team operation controls for owner, priority, SLA, follow-up, and next action per email.
 - Human review checklist that must be completed before a Gmail draft can be created.
 - AI suggested reply composer with formatting controls, regenerate action, and manual `Enviar` button.
+- Reusable reply templates for shipping delays, returns, invoice verification, and sales quotes.
 - Value metrics for prep time, draftable coverage, flagged volume, accepted drafts, edits, escalations, and activity rows.
+- Cost estimator for monthly email volume, agent cost, AI cost per draft, time saved, and net monthly value.
+- Copyable weekly report with active rules, KPI summary, FAQ gaps, and roadmap items.
+- FAQ gap detector that suggests new knowledge-base rows from low-confidence or uncovered intents.
+- Product strategy board with best-fit segments, channel plan, differentiation, weekly report scope, and next bets.
+- 100-question product audit card that maps product answers to visible workflow evidence.
 - Launch checklist for Gmail, Sheets, AI provider, rules, and workspace configuration.
 - Desktop-ready Gmail OAuth connection panel with sync state, history ID tracking, and least-privilege scopes.
 - Configurable Gmail heartbeat for automatic inbox checks and duplicate skipping.
@@ -191,6 +201,20 @@ In desktop mode, the Electron bridge requests the `https://www.googleapis.com/au
 ## Automation Engine
 
 The inbox sync logic is separated from the React UI under `src/automation`. The current engine owns Gmail sync execution, heartbeat scheduling helpers, local heartbeat persistence, duplicate detection through a bounded `seenMessageIds` cache, and returns newly loaded Gmail messages so the UI can classify and draft replies.
+
+## Operating Model
+
+Auto-inbox is now opinionated about the workflow it supports:
+
+- Best-fit users are ecommerce teams, SaaS support teams, and agencies running shared inboxes.
+- Every email receives a safety decision, a suggested owner, priority, SLA, follow-up state, and next action.
+- Operators can tune safety behavior without code by enabling/disabling risk groups and adding custom escalation terms.
+- Agents can apply reusable templates before or after AI generation, which keeps repeated replies consistent.
+- Managers can estimate cost per draft and net monthly value before committing to daily usage.
+- High-risk legal, billing, account, refund, and chargeback cases are routed to verification or escalation instead of normal drafting.
+- Newsletters, automated mail, and no-reply messages are explicitly marked as do-not-draft.
+- Weekly reporting turns the inbox run into a client/manager summary and surfaces FAQ gaps to improve Sheets.
+- The strategy panel keeps product scope visible: Gmail first, Outlook/IMAP later, hosted SaaS only after the local workflow proves trust.
 
 ## Product Roadmap
 

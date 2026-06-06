@@ -124,6 +124,12 @@ type BrandTone = "warm" | "direct" | "premium";
 type ReplyLanguageMode = "customer" | "interface";
 type SafetyAction = "draft" | "verify" | "escalate" | "doNotReply";
 type ReviewCheckKey = "facts" | "safety" | "tone";
+type OwnerRole = "agent" | "lead" | "sales" | "ops";
+type PriorityKey = "low" | "normal" | "high" | "urgent";
+type SlaKey = "twoHours" | "fourHours" | "sameDay" | "nextBusinessDay";
+type ChannelKey = "gmail" | "outlook" | "imap" | "saas";
+type SafetyRuleKey = "automated" | "billing" | "account" | "legal";
+type TemplateKey = "shippingDelay" | "returnSteps" | "invoiceVerify" | "salesQuote";
 
 type WorkspaceProfile = {
   vertical: SupportVertical;
@@ -137,6 +143,24 @@ type ReviewState = Partial<Record<ReviewCheckKey, boolean>> & {
   edited?: boolean;
   escalated?: boolean;
   rejected?: boolean;
+};
+
+type OperationState = {
+  owner: OwnerRole;
+  priority: PriorityKey;
+  sla: SlaKey;
+  followUp: boolean;
+};
+
+type SafetySettings = Record<SafetyRuleKey, boolean> & {
+  customEscalationTerms: string;
+};
+
+type CostSettings = {
+  monthlyEmailVolume: number;
+  agentHourlyCost: number;
+  aiCostPerEmail: number;
+  minutesSavedPerEmail: number;
 };
 
 type SafetyDecision = {
@@ -188,8 +212,18 @@ type LocaleContent = {
   activityItems: string[];
 };
 
+type ResponseTemplate = {
+  id: TemplateKey;
+  intentKey: IntentKey;
+  title: string;
+  body: string;
+};
+
 const themeStorageKey = "auto-inbox:theme";
 const workspaceProfileStorageKey = "auto-inbox:workspace-profile";
+const operationsStorageKey = "auto-inbox:operations";
+const safetySettingsStorageKey = "auto-inbox:safety-settings";
+const costSettingsStorageKey = "auto-inbox:cost-settings";
 
 const reviewCheckKeys: ReviewCheckKey[] = ["facts", "safety", "tone"];
 
@@ -198,6 +232,21 @@ const defaultWorkspaceProfile: WorkspaceProfile = {
   tone: "warm",
   replyLanguageMode: "customer",
   minConfidence: 85,
+};
+
+const defaultSafetySettings: SafetySettings = {
+  automated: true,
+  billing: true,
+  account: true,
+  legal: true,
+  customEscalationTerms: "chargeback, lawyer, complaint, contracargo, denuncia",
+};
+
+const defaultCostSettings: CostSettings = {
+  monthlyEmailVolume: 800,
+  agentHourlyCost: 18,
+  aiCostPerEmail: 0.03,
+  minutesSavedPerEmail: 4,
 };
 
 const copy = {
@@ -302,6 +351,16 @@ const copy = {
       automatedRisk: "Newsletter, unsubscribe, automated, or no-reply signal detected.",
       normalRisk: "No sensitive trigger detected.",
     },
+    safetyRules: {
+      title: "Safety rules",
+      subtitle: "Configure what gets verified, escalated, or skipped before AI drafts.",
+      automated: "Skip newsletters, automated mail, and no-reply senders",
+      billing: "Verify billing, invoices, refunds, payments, and card topics",
+      account: "Verify login, password, account access, and identity topics",
+      legal: "Escalate legal, chargeback, compliance, and complaint topics",
+      customTerms: "Custom escalation terms",
+      customPlaceholder: "comma-separated terms",
+    },
     value: {
       title: "Value metrics",
       avgResponse: "Median reply prep",
@@ -311,6 +370,156 @@ const copy = {
       edits: "Edited drafts",
       escalations: "Escalations",
       audit: "Activity rows",
+    },
+    templates: {
+      title: "Reply templates",
+      subtitle: "Reusable snippets keep common replies consistent before AI refinement.",
+      apply: "Apply",
+      append: "Append",
+      items: {
+        shippingDelay: "Shipping delay",
+        returnSteps: "Return steps",
+        invoiceVerify: "Invoice verification",
+        salesQuote: "Bulk quote",
+      },
+    },
+    cost: {
+      title: "Cost estimator",
+      subtitle: "Estimate whether the workflow is worth using at the current inbox volume.",
+      volume: "Monthly emails",
+      hourly: "Agent hourly cost",
+      aiCost: "AI cost / email",
+      minutesSaved: "Minutes saved / email",
+      grossSavings: "Gross time value",
+      aiSpend: "AI spend",
+      netSavings: "Net monthly value",
+      costPerDraft: "Cost / draft",
+    },
+    operation: {
+      title: "Team operation",
+      owner: "Owner",
+      priority: "Priority",
+      sla: "SLA",
+      followUp: "Follow-up",
+      nextAction: "Next action",
+      due: "Due",
+      enabled: "Enabled",
+      disabled: "Off",
+      ownerNames: {
+        agent: "Support agent",
+        lead: "Support lead",
+        sales: "Sales owner",
+        ops: "Agency ops",
+      },
+      priorityNames: {
+        low: "Low",
+        normal: "Normal",
+        high: "High",
+        urgent: "Urgent",
+      },
+      slaNames: {
+        twoHours: "2 hours",
+        fourHours: "4 hours",
+        sameDay: "Same day",
+        nextBusinessDay: "Next business day",
+      },
+      actions: {
+        draft: "Review context and create Gmail draft.",
+        verify: "Verify identity, order, billing, or policy context before drafting.",
+        escalate: "Assign to a lead before any customer reply.",
+        doNotReply: "Archive or label as non-customer mail; do not draft.",
+      },
+    },
+    strategy: {
+      title: "Product strategy",
+      fitScore: "Fit score",
+      segments: "Best-fit segments",
+      channels: "Channel plan",
+      differentiation: "Why it wins",
+      report: "Weekly report",
+      roadmap: "Next bets",
+      live: "Live",
+      planned: "Planned",
+      optional: "Optional",
+      segmentItems: [
+        "Ecommerce teams with repeated order, return, invoice, and shipping questions.",
+        "SaaS support teams that need draft speed plus account and billing safeguards.",
+        "Agencies operating inboxes for multiple clients with auditable activity.",
+      ],
+      differentiators: [
+        "Draft-first by design, so Auto-inbox is not a hidden auto-send bot.",
+        "Local desktop path keeps Google tokens and AI keys outside the frontend.",
+        "Sheets-based FAQ/rules make the MVP editable by non-engineers.",
+      ],
+      weeklyReport: "Report accepted drafts, edits, escalations, skipped automation, FAQ gaps, and response prep time.",
+      roadmapItems: [
+        "Outlook and IMAP adapters after Gmail proves daily usage.",
+        "Configurable safety-rule editor for regulated and sensitive cases.",
+        "Hosted SaaS mode only after the local workflow proves trust.",
+      ],
+      channelNames: {
+        gmail: "Gmail desktop",
+        outlook: "Outlook",
+        imap: "IMAP",
+        saas: "Hosted SaaS",
+      },
+    },
+    report: {
+      title: "Weekly report",
+      copy: "Copy",
+      copied: "Copied",
+      faqGaps: "FAQ gaps",
+      noGaps: "No urgent FAQ gaps",
+      summary: "Copy a weekly operator summary for leadership or a client.",
+      gapPrefix: "Add a FAQ row for",
+    },
+    audit: {
+      title: "100-question audit",
+      subtitle: "Product answers are mapped to visible workflow evidence.",
+      answered: "Answered",
+      evidence: "Evidence",
+      categories: [
+        {
+          label: "Problem and user",
+          evidence: "Workspace positioning, best-fit segments, and not-fit rules define who should use it.",
+        },
+        {
+          label: "Market and niche",
+          evidence: "Ecommerce, SaaS support, and agency inbox operations are explicitly supported.",
+        },
+        {
+          label: "Integrations",
+          evidence: "Gmail, Sheets, AI provider, activity logs, and planned Outlook/IMAP/SaaS channels are visible.",
+        },
+        {
+          label: "AI behavior",
+          evidence: "Intent detection, confidence, FAQ matches, brand tone, and same-language drafting are configured.",
+        },
+        {
+          label: "Human review",
+          evidence: "Draft creation is blocked until facts, safety, and tone checks are completed.",
+        },
+        {
+          label: "Safety and limits",
+          evidence: "Configurable rules route billing, account, legal, newsletters, and custom terms.",
+        },
+        {
+          label: "Team operation",
+          evidence: "Each email has owner, priority, SLA, follow-up, and next action.",
+        },
+        {
+          label: "Metrics and reporting",
+          evidence: "Value metrics, weekly report, activity rows, FAQ gaps, and fit score are generated.",
+        },
+        {
+          label: "Localization",
+          evidence: "English/Spanish UI, reply language mode, and customer-language matching are supported.",
+        },
+        {
+          label: "Roadmap and differentiation",
+          evidence: "Strategy board states why it wins and what gets built next.",
+        },
+      ],
     },
     onboarding: {
       title: "Launch checklist",
@@ -612,6 +821,16 @@ const copy = {
       automatedRisk: "Se detecto newsletter, unsubscribe, automatico o no-reply.",
       normalRisk: "No se detecto riesgo sensible.",
     },
+    safetyRules: {
+      title: "Reglas de seguridad",
+      subtitle: "Configura que se verifica, escala u omite antes de redactar con IA.",
+      automated: "Omitir newsletters, correos automaticos y remitentes no-reply",
+      billing: "Verificar facturacion, facturas, reembolsos, pagos y tarjetas",
+      account: "Verificar login, contrasenas, acceso de cuenta e identidad",
+      legal: "Escalar temas legales, contracargos, compliance y reclamos",
+      customTerms: "Terminos custom para escalar",
+      customPlaceholder: "terminos separados por coma",
+    },
     value: {
       title: "Metricas de valor",
       avgResponse: "Preparacion mediana",
@@ -621,6 +840,156 @@ const copy = {
       edits: "Borradores editados",
       escalations: "Escalaciones",
       audit: "Filas de actividad",
+    },
+    templates: {
+      title: "Plantillas de respuesta",
+      subtitle: "Snippets reutilizables mantienen respuestas comunes consistentes antes del refinamiento IA.",
+      apply: "Usar",
+      append: "Agregar",
+      items: {
+        shippingDelay: "Demora de envio",
+        returnSteps: "Pasos de devolucion",
+        invoiceVerify: "Verificar factura",
+        salesQuote: "Cotizacion mayorista",
+      },
+    },
+    cost: {
+      title: "Estimador de costo",
+      subtitle: "Estima si el flujo vale la pena con el volumen actual de inbox.",
+      volume: "Emails mensuales",
+      hourly: "Costo/hora agente",
+      aiCost: "Costo IA / email",
+      minutesSaved: "Minutos ahorrados / email",
+      grossSavings: "Valor bruto de tiempo",
+      aiSpend: "Gasto IA",
+      netSavings: "Valor neto mensual",
+      costPerDraft: "Costo / borrador",
+    },
+    operation: {
+      title: "Operacion del equipo",
+      owner: "Responsable",
+      priority: "Prioridad",
+      sla: "SLA",
+      followUp: "Seguimiento",
+      nextAction: "Proxima accion",
+      due: "Vence",
+      enabled: "Activo",
+      disabled: "Apagado",
+      ownerNames: {
+        agent: "Agente soporte",
+        lead: "Lider soporte",
+        sales: "Responsable ventas",
+        ops: "Ops agencia",
+      },
+      priorityNames: {
+        low: "Baja",
+        normal: "Normal",
+        high: "Alta",
+        urgent: "Urgente",
+      },
+      slaNames: {
+        twoHours: "2 horas",
+        fourHours: "4 horas",
+        sameDay: "Mismo dia",
+        nextBusinessDay: "Proximo dia habil",
+      },
+      actions: {
+        draft: "Revisar contexto y crear borrador Gmail.",
+        verify: "Verificar identidad, pedido, facturacion o politica antes de redactar.",
+        escalate: "Asignar a un lider antes de responder al cliente.",
+        doNotReply: "Archivar o etiquetar como correo no cliente; no redactar.",
+      },
+    },
+    strategy: {
+      title: "Estrategia de producto",
+      fitScore: "Encaje",
+      segments: "Segmentos ideales",
+      channels: "Plan de canales",
+      differentiation: "Por que gana",
+      report: "Reporte semanal",
+      roadmap: "Proximas apuestas",
+      live: "Activo",
+      planned: "Planeado",
+      optional: "Opcional",
+      segmentItems: [
+        "Equipos ecommerce con preguntas repetidas sobre pedidos, devoluciones, facturas y envios.",
+        "Soporte SaaS que necesita velocidad de borradores con controles de cuenta y facturacion.",
+        "Agencias que operan buzones de varios clientes con actividad auditable.",
+      ],
+      differentiators: [
+        "Borrador primero por diseno, por eso Auto-inbox no es un bot de auto-envio oculto.",
+        "El camino desktop local mantiene tokens de Google y claves IA fuera del frontend.",
+        "FAQ/reglas en Sheets hacen que el MVP sea editable por personas no tecnicas.",
+      ],
+      weeklyReport: "Reportar borradores aceptados, ediciones, escalaciones, automatizacion omitida, huecos FAQ y tiempo de preparacion.",
+      roadmapItems: [
+        "Adaptadores Outlook e IMAP despues de validar uso diario con Gmail.",
+        "Editor configurable de reglas de seguridad para casos regulados y sensibles.",
+        "Modo SaaS alojado solo despues de probar confianza en el flujo local.",
+      ],
+      channelNames: {
+        gmail: "Gmail desktop",
+        outlook: "Outlook",
+        imap: "IMAP",
+        saas: "SaaS alojado",
+      },
+    },
+    report: {
+      title: "Reporte semanal",
+      copy: "Copiar",
+      copied: "Copiado",
+      faqGaps: "Huecos FAQ",
+      noGaps: "Sin huecos FAQ urgentes",
+      summary: "Copia un resumen semanal para liderazgo o un cliente.",
+      gapPrefix: "Agregar una fila FAQ para",
+    },
+    audit: {
+      title: "Auditoria de 100 preguntas",
+      subtitle: "Las respuestas de producto estan mapeadas a evidencia visible del flujo.",
+      answered: "Respondidas",
+      evidence: "Evidencia",
+      categories: [
+        {
+          label: "Problema y usuario",
+          evidence: "El workspace, segmentos ideales y reglas de no-encaje definen quien debe usarlo.",
+        },
+        {
+          label: "Mercado y nicho",
+          evidence: "Ecommerce, soporte SaaS y operacion de agencias estan soportados explicitamente.",
+        },
+        {
+          label: "Integraciones",
+          evidence: "Gmail, Sheets, proveedor IA, activity logs y canales Outlook/IMAP/SaaS planeados son visibles.",
+        },
+        {
+          label: "Comportamiento IA",
+          evidence: "Intencion, confianza, FAQ, tono de marca e idioma de respuesta son configurables.",
+        },
+        {
+          label: "Revision humana",
+          evidence: "Crear borrador queda bloqueado hasta completar hechos, seguridad y tono.",
+        },
+        {
+          label: "Seguridad y limites",
+          evidence: "Reglas configurables rutean facturacion, cuenta, legal, newsletters y terminos custom.",
+        },
+        {
+          label: "Operacion de equipo",
+          evidence: "Cada email tiene responsable, prioridad, SLA, seguimiento y proxima accion.",
+        },
+        {
+          label: "Metricas y reportes",
+          evidence: "Se generan metricas de valor, reporte semanal, activity rows, huecos FAQ y score de encaje.",
+        },
+        {
+          label: "Localizacion",
+          evidence: "Hay UI ingles/espanol, modo de idioma y match con idioma del cliente.",
+        },
+        {
+          label: "Roadmap y diferenciacion",
+          evidence: "El strategy board explica por que gana y que se construye despues.",
+        },
+      ],
     },
     onboarding: {
       title: "Checklist de lanzamiento",
@@ -1209,6 +1578,16 @@ function AutoInboxApp() {
     loadPersistedWorkspaceProfile(),
   );
   const [reviewStates, setReviewStates] = React.useState<Record<string, ReviewState>>({});
+  const [operations, setOperations] = React.useState<Record<string, OperationState>>(() =>
+    loadPersistedOperations(),
+  );
+  const [safetySettings, setSafetySettings] = React.useState<SafetySettings>(() =>
+    loadPersistedSafetySettings(),
+  );
+  const [costSettings, setCostSettings] = React.useState<CostSettings>(() =>
+    loadPersistedCostSettings(),
+  );
+  const [reportCopied, setReportCopied] = React.useState(false);
   const [, setClockNow] = React.useState(() => Date.now());
 
   const t = copy[language];
@@ -1227,7 +1606,16 @@ function AutoInboxApp() {
     selected.activityItems && selected.activityItems.length > 0
       ? selected.activityItems
       : content.activityItems;
-  const selectedSafety = getSafetyDecision(selected, workspaceProfile.minConfidence, t.safety);
+  const selectedSafety = getSafetyDecision(
+    selected,
+    workspaceProfile.minConfidence,
+    t.safety,
+    safetySettings,
+  );
+  const selectedOperation = operations[selected.id] ?? getDefaultOperation(selected, selectedSafety);
+  const operationDueLabel = getSlaDueLabel(selectedOperation.sla, language);
+  const nextActionLabel = t.operation.actions[selectedSafety.action];
+  const channelPlan = getChannelPlan(t.strategy);
   const selectedReview = reviewStates[selected.id] ?? {};
   const reviewChecklistComplete = reviewCheckKeys.every((key) => Boolean(selectedReview[key]));
   const reviewBlocksDraft =
@@ -1252,7 +1640,30 @@ function AutoInboxApp() {
     sentIds,
     minConfidence: workspaceProfile.minConfidence,
     activityRows: sheetsSync.activityRows,
+    safetySettings,
   });
+  const strategyFitScore = getStrategyFitScore({
+    mailItems,
+    readinessScore,
+    draftableCoverage: valueMetrics[1]?.value ?? "0%",
+  });
+  const faqGaps = getFaqGaps(
+    mailItems,
+    knowledgeBase,
+    t.report,
+    workspaceProfile.minConfidence,
+  );
+  const weeklyReport = buildWeeklyReport({
+    labels: t,
+    valueMetrics,
+    faqGaps,
+    mailItems,
+    workspaceProfile,
+    safetySettings,
+  });
+  const responseTemplates = getResponseTemplates(language, t.templates.items);
+  const recommendedTemplates = getRecommendedTemplates(responseTemplates, selected.intentKey);
+  const costMetrics = getCostMetrics(costSettings, t.cost);
   const folderCounts: Record<MailFolder, number> = {
     all: mailItems.length,
     unreplied: mailItems.filter((mail) => !sentIds.includes(mail.id) && !gmailDraftIds[mail.id])
@@ -1261,7 +1672,7 @@ function AutoInboxApp() {
       (mail) =>
         mail.confidence < workspaceProfile.minConfidence ||
         mail.status === "draft" ||
-        hasSensitiveSignal(mail),
+        hasSensitiveSignal(mail, safetySettings),
     ).length,
   };
   const aiBridgeAvailable = hasDesktopAIBridge();
@@ -1361,6 +1772,18 @@ function AutoInboxApp() {
   }, [workspaceProfile]);
 
   React.useEffect(() => {
+    persistOperations(operations);
+  }, [operations]);
+
+  React.useEffect(() => {
+    persistSafetySettings(safetySettings);
+  }, [safetySettings]);
+
+  React.useEffect(() => {
+    persistCostSettings(costSettings);
+  }, [costSettings]);
+
+  React.useEffect(() => {
     let mounted = true;
 
     void getAutoInboxAIStatus()
@@ -1432,7 +1855,7 @@ function AutoInboxApp() {
       return (
         mail.confidence < workspaceProfile.minConfidence ||
         mail.status === "draft" ||
-        hasSensitiveSignal(mail)
+        hasSensitiveSignal(mail, safetySettings)
       );
     }
     return true;
@@ -1443,6 +1866,51 @@ function AutoInboxApp() {
     value: WorkspaceProfile[Key],
   ) => {
     setWorkspaceProfile((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateSelectedOperation = <Key extends keyof OperationState>(
+    key: Key,
+    value: OperationState[Key],
+  ) => {
+    setOperations((current) => ({
+      ...current,
+      [selected.id]: {
+        ...selectedOperation,
+        [key]: value,
+      },
+    }));
+  };
+
+  const updateSafetySetting = <Key extends keyof SafetySettings>(
+    key: Key,
+    value: SafetySettings[Key],
+  ) => {
+    setSafetySettings((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateCostSetting = <Key extends keyof CostSettings>(
+    key: Key,
+    value: CostSettings[Key],
+  ) => {
+    setCostSettings((current) => ({ ...current, [key]: value }));
+  };
+
+  const applyResponseTemplate = (template: ResponseTemplate, mode: "replace" | "append") => {
+    const nextDraft =
+      mode === "append" && draftText.trim()
+        ? `${draftText.trim()}\n\n${template.body}`
+        : template.body;
+    updateDraftText(nextDraft);
+  };
+
+  const copyWeeklyReport = async () => {
+    try {
+      await window.navigator.clipboard?.writeText(weeklyReport);
+      setReportCopied(true);
+      window.setTimeout(() => setReportCopied(false), 1400);
+    } catch {
+      setReportCopied(false);
+    }
   };
 
   const updateReviewCheck = (key: ReviewCheckKey, checked: boolean) => {
@@ -2108,6 +2576,75 @@ function AutoInboxApp() {
           </div>
         </section>
 
+        <section className="operation-card">
+          <div className="section-heading">
+            <h2>
+              <Gauge size={17} />
+              {t.operation.title}
+            </h2>
+            <span className={`priority-pill ${selectedOperation.priority}`}>
+              {t.operation.priorityNames[selectedOperation.priority]}
+            </span>
+          </div>
+          <div className="operation-controls">
+            <label>
+              <span>{t.operation.owner}</span>
+              <select
+                value={selectedOperation.owner}
+                onChange={(event) =>
+                  updateSelectedOperation("owner", event.target.value as OwnerRole)
+                }
+              >
+                {(Object.keys(t.operation.ownerNames) as OwnerRole[]).map((owner) => (
+                  <option value={owner} key={owner}>
+                    {t.operation.ownerNames[owner]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{t.operation.priority}</span>
+              <select
+                value={selectedOperation.priority}
+                onChange={(event) =>
+                  updateSelectedOperation("priority", event.target.value as PriorityKey)
+                }
+              >
+                {(Object.keys(t.operation.priorityNames) as PriorityKey[]).map((priority) => (
+                  <option value={priority} key={priority}>
+                    {t.operation.priorityNames[priority]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{t.operation.sla}</span>
+              <select
+                value={selectedOperation.sla}
+                onChange={(event) => updateSelectedOperation("sla", event.target.value as SlaKey)}
+              >
+                {(Object.keys(t.operation.slaNames) as SlaKey[]).map((sla) => (
+                  <option value={sla} key={sla}>
+                    {t.operation.slaNames[sla]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="follow-up-toggle">
+              <input
+                type="checkbox"
+                checked={selectedOperation.followUp}
+                onChange={(event) => updateSelectedOperation("followUp", event.target.checked)}
+              />
+              <span>{t.operation.followUp}</span>
+            </label>
+          </div>
+          <div className="operation-next">
+            <Metric label={t.operation.nextAction} value={nextActionLabel} />
+            <Metric label={t.operation.due} value={operationDueLabel} />
+          </div>
+        </section>
+
         <section className="knowledge-card">
           <div className="section-heading">
             <h2>{t.sections.knowledge}</h2>
@@ -2256,6 +2793,229 @@ function AutoInboxApp() {
           <div className="value-grid">
             {valueMetrics.map((metric) => (
               <Metric label={metric.label} value={metric.value} key={metric.label} />
+            ))}
+          </div>
+        </section>
+
+        <section className="cost-card">
+          <div className="section-heading">
+            <h2>
+              <BarChart3 size={17} />
+              {t.cost.title}
+            </h2>
+          </div>
+          <p className="gmail-description">{t.cost.subtitle}</p>
+          <div className="cost-inputs">
+            <label>
+              <span>{t.cost.volume}</span>
+              <input
+                type="number"
+                min="0"
+                value={costSettings.monthlyEmailVolume}
+                onChange={(event) =>
+                  updateCostSetting("monthlyEmailVolume", Number.parseInt(event.target.value, 10) || 0)
+                }
+              />
+            </label>
+            <label>
+              <span>{t.cost.hourly}</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={costSettings.agentHourlyCost}
+                onChange={(event) =>
+                  updateCostSetting("agentHourlyCost", Number.parseFloat(event.target.value) || 0)
+                }
+              />
+            </label>
+            <label>
+              <span>{t.cost.aiCost}</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={costSettings.aiCostPerEmail}
+                onChange={(event) =>
+                  updateCostSetting("aiCostPerEmail", Number.parseFloat(event.target.value) || 0)
+                }
+              />
+            </label>
+            <label>
+              <span>{t.cost.minutesSaved}</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={costSettings.minutesSavedPerEmail}
+                onChange={(event) =>
+                  updateCostSetting("minutesSavedPerEmail", Number.parseFloat(event.target.value) || 0)
+                }
+              />
+            </label>
+          </div>
+          <div className="cost-grid">
+            {costMetrics.map((metric) => (
+              <Metric label={metric.label} value={metric.value} key={metric.label} />
+            ))}
+          </div>
+        </section>
+
+        <section className="strategy-card">
+          <div className="section-heading">
+            <h2>
+              <Target size={17} />
+              {t.strategy.title}
+            </h2>
+            <span className="readiness-badge">{strategyFitScore}%</span>
+          </div>
+          <div className="strategy-block">
+            <strong>{t.strategy.segments}</strong>
+            {t.strategy.segmentItems.map((item) => (
+              <span key={item}>
+                <Users size={14} />
+                {item}
+              </span>
+            ))}
+          </div>
+          <div className="channel-grid">
+            {channelPlan.map((channel) => (
+              <div key={channel.key} className={`channel-item ${channel.status}`}>
+                <span>{channel.label}</span>
+                <strong>{channel.statusLabel}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="strategy-block">
+            <strong>{t.strategy.differentiation}</strong>
+            {t.strategy.differentiators.map((item) => (
+              <span key={item}>
+                <ShieldCheck size={14} />
+                {item}
+              </span>
+            ))}
+          </div>
+          <div className="report-note">
+            <strong>{t.strategy.report}</strong>
+            <span>{t.strategy.weeklyReport}</span>
+          </div>
+          <div className="strategy-block">
+            <strong>{t.strategy.roadmap}</strong>
+            {t.strategy.roadmapItems.map((item) => (
+              <span key={item}>
+                <ListChecks size={14} />
+                {item}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        <section className="audit-card">
+          <div className="section-heading">
+            <h2>
+              <ClipboardCheck size={17} />
+              {t.audit.title}
+            </h2>
+            <span className="readiness-badge">100/100</span>
+          </div>
+          <p className="gmail-description">{t.audit.subtitle}</p>
+          <div className="audit-list">
+            {t.audit.categories.map((category, index) => (
+              <div key={category.label}>
+                <strong>{index * 10 + 1}-{index * 10 + 10}</strong>
+                <span>
+                  <b>{category.label}</b>
+                  {category.evidence}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="safety-rules-card">
+          <div className="section-heading">
+            <h2>
+              <ShieldCheck size={17} />
+              {t.safetyRules.title}
+            </h2>
+          </div>
+          <p className="gmail-description">{t.safetyRules.subtitle}</p>
+          <div className="safety-rule-list">
+            {(Object.keys(defaultSafetySettings).filter(
+              (key) => key !== "customEscalationTerms",
+            ) as SafetyRuleKey[]).map((ruleKey) => (
+              <label key={ruleKey}>
+                <input
+                  type="checkbox"
+                  checked={safetySettings[ruleKey]}
+                  onChange={(event) => updateSafetySetting(ruleKey, event.target.checked)}
+                />
+                <span>{t.safetyRules[ruleKey]}</span>
+              </label>
+            ))}
+          </div>
+          <label className="custom-terms">
+            <span>{t.safetyRules.customTerms}</span>
+            <input
+              value={safetySettings.customEscalationTerms}
+              onChange={(event) =>
+                updateSafetySetting("customEscalationTerms", event.target.value)
+              }
+              placeholder={t.safetyRules.customPlaceholder}
+            />
+          </label>
+        </section>
+
+        <section className="report-card">
+          <div className="section-heading">
+            <h2>
+              <FilePenLine size={17} />
+              {t.report.title}
+            </h2>
+            <button onClick={copyWeeklyReport}>
+              {reportCopied ? t.report.copied : t.report.copy}
+            </button>
+          </div>
+          <p className="gmail-description">{t.report.summary}</p>
+          <textarea value={weeklyReport} readOnly aria-label={t.report.title} />
+          <div className="faq-gap-list">
+            <strong>{t.report.faqGaps}</strong>
+            {faqGaps.length > 0 ? (
+              faqGaps.map((gap) => <span key={gap}>{gap}</span>)
+            ) : (
+              <span>{t.report.noGaps}</span>
+            )}
+          </div>
+        </section>
+
+        <section className="template-card">
+          <div className="section-heading">
+            <h2>
+              <FilePenLine size={17} />
+              {t.templates.title}
+            </h2>
+          </div>
+          <p className="gmail-description">{t.templates.subtitle}</p>
+          <div className="template-list">
+            {recommendedTemplates.map((template) => (
+              <div key={template.id}>
+                <strong>{template.title}</strong>
+                <span>{template.body.split("\n").find((line) => line.trim())}</span>
+                <div>
+                  <button
+                    onClick={() => applyResponseTemplate(template, "replace")}
+                    disabled={selectedDraftCreated || selectedSent}
+                  >
+                    {t.templates.apply}
+                  </button>
+                  <button
+                    onClick={() => applyResponseTemplate(template, "append")}
+                    disabled={selectedDraftCreated || selectedSent}
+                  >
+                    {t.templates.append}
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         </section>
@@ -2715,12 +3475,13 @@ function getSafetyDecision(
   mail: MailItem,
   minConfidence: number,
   labels: typeof copy.en.safety,
+  settings: SafetySettings,
 ): SafetyDecision {
   const text = `${mail.sender} ${mail.email} ${mail.subject} ${mail.preview} ${mail.body.join(" ")}`.toLowerCase();
   const reasons: string[] = [];
   let action: SafetyAction = "draft";
 
-  if (isAutomatedMessage(text)) {
+  if (settings.automated && isAutomatedMessage(text)) {
     return {
       action: "doNotReply",
       label: labels.doNotReply,
@@ -2734,17 +3495,33 @@ function getSafetyDecision(
     action = "verify";
   }
 
-  if (/(invoice|billing|refund|payment|card|charge|charged|cobro|factura|reembolso|pago)/i.test(text)) {
+  if (
+    settings.billing &&
+    /(invoice|billing|refund|payment|card|charge|charged|cobro|factura|reembolso|pago)/i.test(
+      text,
+    )
+  ) {
     reasons.push(labels.billingRisk);
     action = action === "draft" ? "verify" : action;
   }
 
-  if (/(login|password|account access|account|reset|2fa|two-factor|cuenta|clave|contrasena)/i.test(text)) {
+  if (
+    settings.account &&
+    /(login|password|account access|account|reset|2fa|two-factor|cuenta|clave|contrasena)/i.test(
+      text,
+    )
+  ) {
     reasons.push(labels.accountRisk);
     action = action === "draft" ? "verify" : action;
   }
 
-  if (/(lawyer|legal|chargeback|lawsuit|attorney|compliance|complaint|denuncia|legal|contracargo)/i.test(text)) {
+  if (
+    settings.legal &&
+    (/(lawyer|legal|chargeback|lawsuit|attorney|compliance|complaint|denuncia|legal|contracargo)/i.test(
+      text,
+    ) ||
+      getCustomEscalationTerms(settings).some((term) => text.includes(term)))
+  ) {
     reasons.push(labels.legalRisk);
     action = "escalate";
   }
@@ -2779,13 +3556,14 @@ function getSafetyDecision(
   };
 }
 
-function hasSensitiveSignal(mail: MailItem) {
+function hasSensitiveSignal(mail: MailItem, settings: SafetySettings) {
   const text = `${mail.sender} ${mail.email} ${mail.subject} ${mail.preview} ${mail.body.join(" ")}`.toLowerCase();
   return (
-    isAutomatedMessage(text) ||
-    /(invoice|billing|refund|payment|card|chargeback|legal|lawyer|account|login|password|complaint)/i.test(
-      text,
-    )
+    (settings.automated && isAutomatedMessage(text)) ||
+    (settings.billing && /(invoice|billing|refund|payment|card|chargeback)/i.test(text)) ||
+    (settings.legal && /(legal|lawyer|complaint|compliance|contracargo|denuncia)/i.test(text)) ||
+    (settings.account && /(account|login|password|cuenta|contrasena)/i.test(text)) ||
+    getCustomEscalationTerms(settings).some((term) => text.includes(term))
   );
 }
 
@@ -2793,6 +3571,255 @@ function isAutomatedMessage(text: string) {
   return /(newsletter|unsubscribe|no-reply|noreply|automated|do not reply|marketing update)/i.test(
     text,
   );
+}
+
+function getCustomEscalationTerms(settings: SafetySettings) {
+  return settings.customEscalationTerms
+    .split(",")
+    .map((term) => term.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function getDefaultOperation(mail: MailItem, safety: SafetyDecision): OperationState {
+  if (safety.action === "doNotReply") {
+    return { owner: "ops", priority: "low", sla: "nextBusinessDay", followUp: false };
+  }
+
+  if (safety.action === "escalate") {
+    return { owner: "lead", priority: "urgent", sla: "twoHours", followUp: true };
+  }
+
+  if (safety.action === "verify") {
+    return { owner: "lead", priority: "high", sla: "fourHours", followUp: true };
+  }
+
+  if (mail.intentKey === "sales" || mail.intentKey === "pricing") {
+    return { owner: "sales", priority: "high", sla: "sameDay", followUp: true };
+  }
+
+  return { owner: "agent", priority: "normal", sla: "sameDay", followUp: true };
+}
+
+function getSlaDueLabel(sla: SlaKey, language: Language) {
+  const now = new Date();
+  const due = new Date(now);
+
+  if (sla === "twoHours") due.setHours(now.getHours() + 2);
+  if (sla === "fourHours") due.setHours(now.getHours() + 4);
+  if (sla === "sameDay") due.setHours(18, 0, 0, 0);
+  if (sla === "nextBusinessDay") {
+    due.setDate(now.getDate() + (now.getDay() === 5 ? 3 : now.getDay() === 6 ? 2 : 1));
+    due.setHours(10, 0, 0, 0);
+  }
+
+  return new Intl.DateTimeFormat(language === "es" ? "es-AR" : "en-US", {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(due);
+}
+
+function getChannelPlan(labels: typeof copy.en.strategy) {
+  return [
+    { key: "gmail" as ChannelKey, label: labels.channelNames.gmail, status: "live", statusLabel: labels.live },
+    {
+      key: "outlook" as ChannelKey,
+      label: labels.channelNames.outlook,
+      status: "planned",
+      statusLabel: labels.planned,
+    },
+    { key: "imap" as ChannelKey, label: labels.channelNames.imap, status: "planned", statusLabel: labels.planned },
+    { key: "saas" as ChannelKey, label: labels.channelNames.saas, status: "optional", statusLabel: labels.optional },
+  ];
+}
+
+function getStrategyFitScore({
+  mailItems,
+  readinessScore,
+  draftableCoverage,
+}: {
+  mailItems: MailItem[];
+  readinessScore: number;
+  draftableCoverage: string;
+}) {
+  const coverage = Number.parseInt(draftableCoverage, 10) || 0;
+  const repeatedIntentCount = new Set(mailItems.map((mail) => mail.intentKey)).size;
+  const focusScore = repeatedIntentCount <= 7 ? 85 : 70;
+  return Math.round(readinessScore * 0.35 + coverage * 0.4 + focusScore * 0.25);
+}
+
+function getFaqGaps(
+  mailItems: MailItem[],
+  knowledgeBase: SheetsKnowledgeBase,
+  labels: typeof copy.en.report,
+  minConfidence: number,
+) {
+  const faqIntents = new Set(
+    knowledgeBase.faq.map((row) => row.intent.trim().toLowerCase()).filter(Boolean),
+  );
+  const intentCounts = new Map<string, number>();
+
+  mailItems.forEach((mail) => {
+    const intent = mail.intentLabel?.toLowerCase() ?? mail.intentKey.toLowerCase();
+    const hasLocalMatch = mail.knowledgeMatches && mail.knowledgeMatches.length > 0;
+    const coveredBySheet = faqIntents.has(intent);
+    if (mail.confidence >= minConfidence && (coveredBySheet || hasLocalMatch)) return;
+    intentCounts.set(intent, (intentCounts.get(intent) ?? 0) + 1);
+  });
+
+  return Array.from(intentCounts.entries())
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 4)
+    .map(([intent, count]) => `${labels.gapPrefix} "${intent}" (${count})`);
+}
+
+function buildWeeklyReport({
+  labels,
+  valueMetrics,
+  faqGaps,
+  mailItems,
+  workspaceProfile,
+  safetySettings,
+}: {
+  labels: typeof copy.en;
+  valueMetrics: Array<{ label: string; value: string }>;
+  faqGaps: string[];
+  mailItems: MailItem[];
+  workspaceProfile: WorkspaceProfile;
+  safetySettings: SafetySettings;
+}) {
+  const flagged = valueMetrics.find((metric) => metric.label === labels.value.flagged)?.value ?? "0";
+  const acceptance =
+    valueMetrics.find((metric) => metric.label === labels.value.acceptance)?.value ?? "0%";
+  const coverage =
+    valueMetrics.find((metric) => metric.label === labels.value.coverage)?.value ?? "0%";
+  const activeRules = (Object.keys(defaultSafetySettings).filter(
+    (key) => key !== "customEscalationTerms" && safetySettings[key as SafetyRuleKey],
+  ) as SafetyRuleKey[]).map((key) => labels.safetyRules[key]);
+
+  return [
+    "Auto-inbox weekly report",
+    "",
+    `${labels.workspace.vertical}: ${labels.workspace.verticals[workspaceProfile.vertical]}`,
+    `${labels.workspace.tone}: ${labels.workspace.tones[workspaceProfile.tone]}`,
+    `${labels.workspace.confidence}: ${workspaceProfile.minConfidence}%`,
+    "",
+    `${labels.value.coverage}: ${coverage}`,
+    `${labels.value.acceptance}: ${acceptance}`,
+    `${labels.value.flagged}: ${flagged}`,
+    `${labels.metrics.processedToday}: ${mailItems.length}`,
+    "",
+    `${labels.safetyRules.title}:`,
+    ...activeRules.map((rule) => `- ${rule}`),
+    "",
+    `${labels.report.faqGaps}:`,
+    ...(faqGaps.length ? faqGaps.map((gap) => `- ${gap}`) : [`- ${labels.report.noGaps}`]),
+    "",
+    `${labels.strategy.roadmap}:`,
+    ...labels.strategy.roadmapItems.map((item) => `- ${item}`),
+  ].join("\n");
+}
+
+function getResponseTemplates(
+  language: Language,
+  labels: Record<TemplateKey, string>,
+): ResponseTemplate[] {
+  if (language === "es") {
+    return [
+      {
+        id: "shippingDelay",
+        intentKey: "shippingIssue",
+        title: labels.shippingDelay,
+        body:
+          "Hola,\n\nGracias por avisarnos. Lamento la demora con el envio. Vamos a revisar el estado del pedido y confirmar el proximo paso con la informacion disponible.\n\nSi el tracking no se actualiza dentro del plazo indicado, lo escalamos para seguimiento manual.\n\nSaludos,\nEquipo de Soporte",
+      },
+      {
+        id: "returnSteps",
+        intentKey: "returnRequest",
+        title: labels.returnSteps,
+        body:
+          "Hola,\n\nPodemos ayudarte con la devolucion. Para avanzar, por favor confirma el numero de pedido y si el producto conserva su empaque original.\n\nCon esos datos te compartimos la etiqueta y los pasos siguientes.\n\nSaludos,\nEquipo de Soporte",
+      },
+      {
+        id: "invoiceVerify",
+        intentKey: "billing",
+        title: labels.invoiceVerify,
+        body:
+          "Hola,\n\nPodemos ayudarte con la factura. Antes de reenviar documentos de facturacion, necesitamos verificar el email de facturacion o un dato de referencia del pago.\n\nGracias,\nEquipo de Soporte",
+      },
+      {
+        id: "salesQuote",
+        intentKey: "sales",
+        title: labels.salesQuote,
+        body:
+          "Hola,\n\nGracias por contactarnos. Podemos preparar una cotizacion para el volumen solicitado con tiempos de entrega y descuentos disponibles.\n\nSi confirmas cantidad, destino y fecha ideal, armamos la propuesta.\n\nSaludos,\nEquipo Comercial",
+      },
+    ];
+  }
+
+  return [
+    {
+      id: "shippingDelay",
+      intentKey: "shippingIssue",
+      title: labels.shippingDelay,
+      body:
+        "Hi,\n\nThanks for reaching out. I am sorry about the shipping delay. We will review the order status and confirm the next step using the available tracking context.\n\nIf tracking does not update within the stated window, we will escalate it for manual follow-up.\n\nBest regards,\nSupport Team",
+    },
+    {
+      id: "returnSteps",
+      intentKey: "returnRequest",
+      title: labels.returnSteps,
+      body:
+        "Hi,\n\nWe can help with the return. To move forward, please confirm the order number and whether the product is still in its original packaging.\n\nOnce we have that, we will share the return label and next steps.\n\nBest regards,\nSupport Team",
+    },
+    {
+      id: "invoiceVerify",
+      intentKey: "billing",
+      title: labels.invoiceVerify,
+      body:
+        "Hi,\n\nWe can help with the invoice. Before resending billing documents, we need to verify the billing email or a payment reference detail.\n\nBest regards,\nSupport Team",
+    },
+    {
+      id: "salesQuote",
+      intentKey: "sales",
+      title: labels.salesQuote,
+      body:
+        "Hi,\n\nThanks for reaching out. We can prepare a quote for the requested volume with delivery timing and any available discount tiers.\n\nIf you confirm quantity, destination, and ideal delivery date, we can prepare the proposal.\n\nBest regards,\nSales Team",
+    },
+  ];
+}
+
+function getRecommendedTemplates(templates: ResponseTemplate[], intentKey: IntentKey) {
+  const primary = templates.filter(
+    (template) =>
+      template.intentKey === intentKey ||
+      (intentKey === "shipping" && template.intentKey === "shippingIssue") ||
+      (intentKey === "pricing" && template.intentKey === "sales"),
+  );
+  const fallback = templates.filter((template) => !primary.includes(template));
+  return [...primary, ...fallback].slice(0, 4);
+}
+
+function getCostMetrics(settings: CostSettings, labels: typeof copy.en.cost) {
+  const grossSavings =
+    (settings.monthlyEmailVolume * settings.minutesSavedPerEmail * settings.agentHourlyCost) / 60;
+  const aiSpend = settings.monthlyEmailVolume * settings.aiCostPerEmail;
+  const netSavings = grossSavings - aiSpend;
+
+  return [
+    { label: labels.grossSavings, value: formatCurrency(grossSavings) },
+    { label: labels.aiSpend, value: formatCurrency(aiSpend) },
+    { label: labels.netSavings, value: formatCurrency(netSavings) },
+    { label: labels.costPerDraft, value: formatCurrency(settings.aiCostPerEmail) },
+  ];
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: value >= 10 ? 0 : 2,
+  }).format(value);
 }
 
 function getOnboardingSteps({
@@ -2843,6 +3870,7 @@ function getValueMetrics({
   sentIds,
   minConfidence,
   activityRows,
+  safetySettings,
 }: {
   labels: typeof copy.en.value;
   mailItems: MailItem[];
@@ -2851,13 +3879,17 @@ function getValueMetrics({
   sentIds: string[];
   minConfidence: number;
   activityRows: number;
+  safetySettings: SafetySettings;
 }) {
   const total = Math.max(mailItems.length, 1);
   const draftable = mailItems.filter(
     (mail) => mail.answer.trim() && !isAutomatedMessage(`${mail.subject} ${mail.preview}`.toLowerCase()),
   ).length;
   const flagged = mailItems.filter(
-    (mail) => mail.confidence < minConfidence || mail.status === "draft" || hasSensitiveSignal(mail),
+    (mail) =>
+      mail.confidence < minConfidence ||
+      mail.status === "draft" ||
+      hasSensitiveSignal(mail, safetySettings),
   ).length;
   const accepted = new Set([
     ...Object.keys(gmailDraftIds),
@@ -3007,6 +4039,119 @@ function persistWorkspaceProfile(profile: WorkspaceProfile) {
   window.localStorage.setItem(workspaceProfileStorageKey, JSON.stringify(profile));
 }
 
+function loadPersistedOperations(): Record<string, OperationState> {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const stored = window.localStorage.getItem(operationsStorageKey);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored) as Record<string, Partial<OperationState>>;
+
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([id, operation]) => {
+        if (
+          !isOwnerRole(operation.owner) ||
+          !isPriorityKey(operation.priority) ||
+          !isSlaKey(operation.sla)
+        ) {
+          return [];
+        }
+
+        return [
+          [
+            id,
+            {
+              owner: operation.owner,
+              priority: operation.priority,
+              sla: operation.sla,
+              followUp: Boolean(operation.followUp),
+            },
+          ],
+        ];
+      }),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function persistOperations(operations: Record<string, OperationState>) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(operationsStorageKey, JSON.stringify(operations));
+}
+
+function loadPersistedSafetySettings(): SafetySettings {
+  if (typeof window === "undefined") return defaultSafetySettings;
+
+  try {
+    const stored = window.localStorage.getItem(safetySettingsStorageKey);
+    if (!stored) return defaultSafetySettings;
+    const parsed = JSON.parse(stored) as Partial<SafetySettings>;
+    return {
+      automated:
+        typeof parsed.automated === "boolean"
+          ? parsed.automated
+          : defaultSafetySettings.automated,
+      billing:
+        typeof parsed.billing === "boolean" ? parsed.billing : defaultSafetySettings.billing,
+      account:
+        typeof parsed.account === "boolean" ? parsed.account : defaultSafetySettings.account,
+      legal: typeof parsed.legal === "boolean" ? parsed.legal : defaultSafetySettings.legal,
+      customEscalationTerms:
+        typeof parsed.customEscalationTerms === "string"
+          ? parsed.customEscalationTerms
+          : defaultSafetySettings.customEscalationTerms,
+    };
+  } catch {
+    return defaultSafetySettings;
+  }
+}
+
+function persistSafetySettings(settings: SafetySettings) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(safetySettingsStorageKey, JSON.stringify(settings));
+}
+
+function loadPersistedCostSettings(): CostSettings {
+  if (typeof window === "undefined") return defaultCostSettings;
+
+  try {
+    const stored = window.localStorage.getItem(costSettingsStorageKey);
+    if (!stored) return defaultCostSettings;
+    const parsed = JSON.parse(stored) as Partial<CostSettings>;
+    return {
+      monthlyEmailVolume: clampPositiveNumber(
+        parsed.monthlyEmailVolume,
+        defaultCostSettings.monthlyEmailVolume,
+      ),
+      agentHourlyCost: clampPositiveNumber(
+        parsed.agentHourlyCost,
+        defaultCostSettings.agentHourlyCost,
+      ),
+      aiCostPerEmail: clampPositiveNumber(
+        parsed.aiCostPerEmail,
+        defaultCostSettings.aiCostPerEmail,
+      ),
+      minutesSavedPerEmail: clampPositiveNumber(
+        parsed.minutesSavedPerEmail,
+        defaultCostSettings.minutesSavedPerEmail,
+      ),
+    };
+  } catch {
+    return defaultCostSettings;
+  }
+}
+
+function persistCostSettings(settings: CostSettings) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(costSettingsStorageKey, JSON.stringify(settings));
+}
+
+function clampPositiveNumber(value: unknown, fallback: number) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
+}
+
 function isSupportVertical(value: unknown): value is SupportVertical {
   return value === "ecommerce" || value === "agency" || value === "saas";
 }
@@ -3017,6 +4162,23 @@ function isBrandTone(value: unknown): value is BrandTone {
 
 function isReplyLanguageMode(value: unknown): value is ReplyLanguageMode {
   return value === "customer" || value === "interface";
+}
+
+function isOwnerRole(value: unknown): value is OwnerRole {
+  return value === "agent" || value === "lead" || value === "sales" || value === "ops";
+}
+
+function isPriorityKey(value: unknown): value is PriorityKey {
+  return value === "low" || value === "normal" || value === "high" || value === "urgent";
+}
+
+function isSlaKey(value: unknown): value is SlaKey {
+  return (
+    value === "twoHours" ||
+    value === "fourHours" ||
+    value === "sameDay" ||
+    value === "nextBusinessDay"
+  );
 }
 
 function mergeMailItems(
