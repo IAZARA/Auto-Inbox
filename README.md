@@ -22,6 +22,8 @@ The 100-question product audit is answered in [`docs/product-answers.md`](docs/p
 ## Highlights
 
 - Premium 4-column inbox dashboard inspired by modern email and support tools.
+- Functional workspace navigation that separates inbox work, operations, reports, and setup.
+- Focused review flow with the suggested reply visible immediately beside the selected message.
 - Clear support workspace controls for niche, brand tone, reply language, and confidence threshold.
 - Dark sidebar with mailbox, automation, integration, and mode controls.
 - Searchable inbox list with unread states and selected-message focus.
@@ -39,6 +41,7 @@ The 100-question product audit is answered in [`docs/product-answers.md`](docs/p
 - Product strategy board with best-fit segments, channel plan, differentiation, weekly report scope, and next bets.
 - 100-question product audit card that maps product answers to visible workflow evidence.
 - Launch checklist for Gmail, Sheets, AI provider, rules, and workspace configuration.
+- Production setup panel for support inbox, Google OAuth client ID, AI provider/model/base URL, launch verification, and a copyable `.env` preview without storing secrets.
 - Desktop-ready Gmail OAuth connection panel with sync state, history ID tracking, and least-privilege scopes.
 - Configurable Gmail heartbeat for automatic inbox checks and duplicate skipping.
 - Google Sheets MVP integration for FAQ rows, automation rules, and activity logs.
@@ -47,7 +50,7 @@ The 100-question product audit is answered in [`docs/product-answers.md`](docs/p
 - Automation status panel and activity log for observability.
 - English and Spanish interface language toggle while keeping email content untouched.
 - Real light/dark theme selector using CSS theme tokens and native `color-scheme` rendering.
-- Responsive layout with no horizontal overflow on mobile.
+- Responsive list-to-message flow on mobile with a clear back action and no horizontal overflow.
 
 ## Tech Stack
 
@@ -215,12 +218,13 @@ Auto-inbox is now opinionated about the workflow it supports:
 - Newsletters, automated mail, and no-reply messages are explicitly marked as do-not-draft.
 - Weekly reporting turns the inbox run into a client/manager summary and surfaces FAQ gaps to improve Sheets.
 - The strategy panel keeps product scope visible: Gmail first, Outlook/IMAP later, hosted SaaS only after the local workflow proves trust.
+- The production setup panel turns launch friction into explicit fields and checks: support address, OAuth client ID, Sheets tab verification, AI provider/model, and human-review policy.
 
 ## Product Roadmap
 
-- Settings UI for Gmail OAuth client configuration.
 - Google Picker support for choosing a spreadsheet without pasting an ID.
-- Configurable safety-rule editor for newsletters, billing, legal, and sensitive support cases.
+- Advanced rule templates and approval workflows for regulated and sensitive support cases.
+- Outlook and IMAP adapters after Gmail proves daily usage.
 - Desktop installer polish, app icon, and signed releases.
 - Optional hosted SaaS mode for always-on automation.
 

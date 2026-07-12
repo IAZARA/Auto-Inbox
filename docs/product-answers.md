@@ -26,7 +26,7 @@ Este documento responde afirmativamente las 100 preguntas planteadas a partir de
 17. Si: contempla agente, lead, ventas y operaciones de agencia como roles operativos.
 18. Si: industrias con billing, cuenta, reclamos o politicas sensibles conservan revision humana.
 19. Si: no se recomienda para legal, salud, auto-envio oculto o buzones sin revision.
-20. Si: el checklist de lanzamiento muestra la complejidad de OAuth, Sheets, IA y reglas.
+20. Si: el checklist y el setup de produccion convierten la complejidad de OAuth, Sheets, IA y reglas en campos y controles visibles.
 
 ## 3. Integraciones
 
@@ -39,7 +39,7 @@ Este documento responde afirmativamente las 100 preguntas planteadas a partir de
 27. Si: el log de actividad y reporte semanal dan auditoria operativa.
 28. Si: aparecen sync, heartbeat, duplicate guard, status de integraciones y activity log.
 29. Si: el heartbeat configurable cubre de 30 segundos a 15 minutos.
-30. Si: errores de Gmail/Sheets muestran estado de atencion y permiten reconectar.
+30. Si: errores de Gmail/Sheets muestran estado de atencion, permiten reconectar y el setup explicita que credenciales deben verificarse.
 
 ## 4. IA y drafting
 
@@ -71,7 +71,7 @@ Este documento responde afirmativamente las 100 preguntas planteadas a partir de
 
 51. Si: funciona como app local y el roadmap contempla SaaS opcional.
 52. Si: el modo desktop es ventaja porque protege tokens y claves fuera del frontend.
-53. Si: el README y la UI comunican que las claves no viven en React.
+53. Si: el README y la UI de setup comunican que las claves no viven en React ni se guardan en el navegador.
 54. Si: Electron safeStorage cifra access y refresh tokens.
 55. Si: el flujo evita guardar tokens en frontend storage.
 56. Si: soporta OpenAI, DeepSeek, Anthropic, Moonshot y OpenAI-compatible custom.
@@ -108,14 +108,14 @@ Este documento responde afirmativamente las 100 preguntas planteadas a partir de
 
 ## 9. Roadmap y adopcion
 
-81. Si: el roadmap prioriza settings, Google Picker, safety editor, installer y SaaS.
+81. Si: el roadmap prioriza Google Picker, reglas avanzadas, Outlook/IMAP, installer y SaaS.
 82. Si: Gmail + Sheets + AI + human review + safety + report forman un MVP vendible.
 83. Si: SaaS, Outlook e IMAP quedan fuera del MVP sin romper valor principal.
 84. Si: el flujo minimo util es conectar Gmail/Sheets, clasificar, revisar y crear draft.
 85. Si: uso diario se apoya en heartbeat, dedupe, SLA, owner, reportes y drafts.
-86. Si: el checklist expone friccion inicial de OAuth, Sheets, IA y reglas.
-87. Si: OAuth/credenciales se tratan como complejidad controlada en desktop.
-88. Si: launch checklist guia onboarding dentro de la app.
+86. Si: el checklist y el setup exponen friccion inicial de OAuth, Sheets, IA, reglas y revision.
+87. Si: OAuth/credenciales se tratan como complejidad controlada en desktop y el panel genera una vista .env sin secretos.
+88. Si: launch checklist y setup guian onboarding dentro de la app.
 89. Si: la demo de 60 segundos muestra email, intent, FAQ, safety, draft y review gate.
 90. Si: el README cuenta una historia de producto human-in-the-loop y local-first.
 

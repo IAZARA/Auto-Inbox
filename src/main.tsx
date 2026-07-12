@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   AtSign,
   BarChart3,
-  Bold,
   Bot,
   Check,
   CheckCircle2,
@@ -18,29 +17,17 @@ import {
   Gauge,
   Hexagon,
   Inbox,
-  Info,
-  Italic,
   Link,
-  List,
   ListChecks,
-  Mail,
-  MoreVertical,
   Pause,
-  PenLine,
   RefreshCcw,
-  Reply,
-  RotateCcw,
   Search,
   Send,
   Settings,
-  Shield,
   ShieldCheck,
   Sparkles,
   Store,
-  Tag,
   Target,
-  Trash2,
-  Undo2,
   UserCheck,
   Users,
   XCircle,
@@ -57,7 +44,7 @@ import {
 import { loadPersistedInboxState, persistInboxState } from "./automation/localState";
 import { createGmailDraft, getMessageMetadata, listInboxMessages, listNewInboxHistory } from "./gmail/gmailApi";
 import { analyzeEmail, getAutoInboxAIStatus, hasDesktopAIBridge } from "./ai/aiBridge";
-import type { AutoInboxAIStatus } from "./ai/types";
+import type { AutoInboxAIProvider, AutoInboxAIStatus } from "./ai/types";
 import {
   connectGmailOAuth,
   disconnectGmailOAuth,
@@ -95,6 +82,9 @@ import "./styles.css";
 
 type Language = "en" | "es";
 type Theme = "light" | "dark";
+type AppView = "inbox" | "automation" | "reports" | "settings";
+type MailboxScope = "inbox" | "drafts" | "sent";
+type MobilePane = "list" | "message";
 type MailStatus = "draft" | "ready" | "waiting" | "sent" | "gmailDraft";
 type MailFolder = "all" | "unreplied" | "flagged";
 type IntentKey =
@@ -163,6 +153,25 @@ type CostSettings = {
   minutesSavedPerEmail: number;
 };
 
+type ProductionSetupSettings = {
+  supportAddress: string;
+  oauthClientId: string;
+  aiProvider: AutoInboxAIProvider;
+  aiModel: string;
+  aiBaseUrl: string;
+  aiJsonMode: boolean;
+  gmailCredentialsVerified: boolean;
+  sheetsTabsVerified: boolean;
+  aiKeyVerified: boolean;
+  reviewPolicyAccepted: boolean;
+};
+
+type ProductionSetupCheckKey =
+  | "gmailCredentialsVerified"
+  | "sheetsTabsVerified"
+  | "aiKeyVerified"
+  | "reviewPolicyAccepted";
+
 type SafetyDecision = {
   action: SafetyAction;
   label: string;
@@ -224,8 +233,16 @@ const workspaceProfileStorageKey = "auto-inbox:workspace-profile";
 const operationsStorageKey = "auto-inbox:operations";
 const safetySettingsStorageKey = "auto-inbox:safety-settings";
 const costSettingsStorageKey = "auto-inbox:cost-settings";
+const productionSetupStorageKey = "auto-inbox:production-setup";
 
 const reviewCheckKeys: ReviewCheckKey[] = ["facts", "safety", "tone"];
+const aiProviderOptions: AutoInboxAIProvider[] = [
+  "openai",
+  "deepseek",
+  "anthropic",
+  "moonshot",
+  "custom-openai-compatible",
+];
 
 const defaultWorkspaceProfile: WorkspaceProfile = {
   vertical: "ecommerce",
@@ -249,6 +266,35 @@ const defaultCostSettings: CostSettings = {
   minutesSavedPerEmail: 4,
 };
 
+const defaultProviderModels: Record<AutoInboxAIProvider, string> = {
+  openai: "gpt-5-mini",
+  deepseek: "deepseek-v4-flash",
+  anthropic: "claude-sonnet-4-6",
+  moonshot: "kimi-k2.6",
+  "custom-openai-compatible": "custom-model",
+};
+
+const defaultProviderBaseUrls: Record<AutoInboxAIProvider, string> = {
+  openai: "",
+  deepseek: "",
+  anthropic: "",
+  moonshot: "",
+  "custom-openai-compatible": "http://127.0.0.1:1234/v1",
+};
+
+const defaultProductionSetup: ProductionSetupSettings = {
+  supportAddress: "support@yourstore.com",
+  oauthClientId: "",
+  aiProvider: "openai",
+  aiModel: defaultProviderModels.openai,
+  aiBaseUrl: "",
+  aiJsonMode: false,
+  gmailCredentialsVerified: false,
+  sheetsTabsVerified: false,
+  aiKeyVerified: false,
+  reviewPolicyAccepted: true,
+};
+
 const copy = {
   en: {
     ariaMailbox: "Mailbox",
@@ -270,6 +316,30 @@ const copy = {
       rules: "Rules",
       signatures: "Signatures",
       settings: "Settings",
+    },
+    views: {
+      automation: {
+        label: "Operations",
+        title: "Automation and integrations",
+        subtitle: "Connect the services that power the inbox and monitor each processing run.",
+      },
+      reports: {
+        label: "Reports",
+        title: "Performance and value",
+        subtitle: "Review outcomes, costs, knowledge gaps, and the next product decisions.",
+      },
+      settings: {
+        label: "Settings",
+        title: "Workspace settings",
+        subtitle: "Configure the support playbook and prepare the desktop environment safely.",
+      },
+    },
+    mailbox: {
+      emptyTitle: "No messages here",
+      emptyDescription: "Change the filter or return to the inbox to keep working.",
+      clear: "Clear filters",
+      draftsDescription: "Gmail drafts created after human review.",
+      sentDescription: "Messages marked as sent in this workspace.",
     },
     sections: {
       automation: "Automation",
@@ -394,6 +464,33 @@ const copy = {
       aiSpend: "AI spend",
       netSavings: "Net monthly value",
       costPerDraft: "Cost / draft",
+    },
+    setup: {
+      title: "Production setup",
+      subtitle: "Prepare the desktop launch path without storing secrets in the browser.",
+      supportAddress: "Support inbox",
+      gmailClientId: "Google OAuth client ID",
+      aiProvider: "AI provider",
+      aiModel: "AI model",
+      aiBaseUrl: "AI base URL",
+      aiJsonMode: "JSON mode",
+      verification: "Launch checks",
+      gmailVerified: "OAuth desktop client created in Google Cloud",
+      sheetsVerified: "Sheets tabs FAQ, Rules, Activity, and Settings verified",
+      aiKeyVerified: "AI key is present in the desktop .env file",
+      reviewAccepted: "Human-review policy accepted by the team",
+      env: ".env preview",
+      copyEnv: "Copy env",
+      copied: "Copied",
+      secretsNote: "Secrets stay out of this UI. Add API keys only to the desktop .env file.",
+      readiness: "Setup",
+      providers: {
+        openai: "OpenAI",
+        deepseek: "DeepSeek",
+        anthropic: "Claude / Anthropic",
+        moonshot: "Kimi / Moonshot",
+        "custom-openai-compatible": "OpenAI-compatible",
+      },
     },
     operation: {
       title: "Team operation",
@@ -741,6 +838,30 @@ const copy = {
       signatures: "Firmas",
       settings: "Configuraci\u00f3n",
     },
+    views: {
+      automation: {
+        label: "Operaci\u00f3n",
+        title: "Automatizaci\u00f3n e integraciones",
+        subtitle: "Conecta los servicios del buz\u00f3n y controla cada ejecuci\u00f3n del proceso.",
+      },
+      reports: {
+        label: "Reportes",
+        title: "Rendimiento y valor",
+        subtitle: "Revisa resultados, costos, faltantes de conocimiento y pr\u00f3ximas decisiones.",
+      },
+      settings: {
+        label: "Configuraci\u00f3n",
+        title: "Configuraci\u00f3n del espacio",
+        subtitle: "Ajusta el playbook de soporte y prepara el entorno desktop de forma segura.",
+      },
+    },
+    mailbox: {
+      emptyTitle: "No hay mensajes en esta vista",
+      emptyDescription: "Cambia el filtro o vuelve a la bandeja para seguir trabajando.",
+      clear: "Limpiar filtros",
+      draftsDescription: "Borradores de Gmail creados despu\u00e9s de la revisi\u00f3n humana.",
+      sentDescription: "Mensajes marcados como enviados en este espacio.",
+    },
     sections: {
       automation: "Automatizaci\u00f3n",
       integrations: "Integraciones",
@@ -864,6 +985,33 @@ const copy = {
       aiSpend: "Gasto IA",
       netSavings: "Valor neto mensual",
       costPerDraft: "Costo / borrador",
+    },
+    setup: {
+      title: "Setup de produccion",
+      subtitle: "Prepara el camino desktop sin guardar secretos en el navegador.",
+      supportAddress: "Inbox de soporte",
+      gmailClientId: "Client ID OAuth de Google",
+      aiProvider: "Proveedor IA",
+      aiModel: "Modelo IA",
+      aiBaseUrl: "Base URL IA",
+      aiJsonMode: "Modo JSON",
+      verification: "Controles de lanzamiento",
+      gmailVerified: "Cliente OAuth desktop creado en Google Cloud",
+      sheetsVerified: "Pestanas FAQ, Rules, Activity y Settings verificadas",
+      aiKeyVerified: "API key IA presente en el archivo .env desktop",
+      reviewAccepted: "Politica de revision humana aceptada por el equipo",
+      env: "Vista .env",
+      copyEnv: "Copiar env",
+      copied: "Copiado",
+      secretsNote: "Los secretos no se guardan aca. Agrega API keys solo al archivo .env desktop.",
+      readiness: "Setup",
+      providers: {
+        openai: "OpenAI",
+        deepseek: "DeepSeek",
+        anthropic: "Claude / Anthropic",
+        moonshot: "Kimi / Moonshot",
+        "custom-openai-compatible": "OpenAI-compatible",
+      },
     },
     operation: {
       title: "Operacion del equipo",
@@ -1543,6 +1691,9 @@ function AutoInboxApp() {
   const persistedInboxState = React.useMemo(() => loadPersistedInboxState(), []);
   const [language, setLanguage] = React.useState<Language>("en");
   const [theme, setTheme] = React.useState<Theme>(() => loadPersistedTheme());
+  const [activeView, setActiveView] = React.useState<AppView>("inbox");
+  const [mailboxScope, setMailboxScope] = React.useState<MailboxScope>("inbox");
+  const [mobilePane, setMobilePane] = React.useState<MobilePane>("list");
   const [mailItems, setMailItems] = React.useState<MailItem[]>(() =>
     demoMails.map((mail) => ({
       ...mail,
@@ -1553,7 +1704,7 @@ function AutoInboxApp() {
   const [query, setQuery] = React.useState("");
   const [activeFolder, setActiveFolder] = React.useState<MailFolder>("all");
   const [queuePaused, setQueuePaused] = React.useState(false);
-  const [sentIds, setSentIds] = React.useState<string[]>(() =>
+  const [sentIds] = React.useState<string[]>(() =>
     persistedInboxState.sentIds.length > 0 ? persistedInboxState.sentIds : ["demo-7"],
   );
   const [gmailDraftIds, setGmailDraftIds] = React.useState<Record<string, string>>(
@@ -1588,9 +1739,14 @@ function AutoInboxApp() {
     loadPersistedCostSettings(),
   );
   const [reportCopied, setReportCopied] = React.useState(false);
+  const [setupSettings, setSetupSettings] = React.useState<ProductionSetupSettings>(() =>
+    loadPersistedProductionSetup(),
+  );
+  const [setupCopied, setSetupCopied] = React.useState(false);
   const [, setClockNow] = React.useState(() => Date.now());
 
   const t = copy[language];
+  const workspaceViewCopy = activeView === "inbox" ? null : t.views[activeView];
   const content = localizedContent[language];
   const selected = mailItems.find((mail) => mail.id === selectedId) ?? mailItems[0] ?? demoMails[0];
   const draftText = drafts[selected.id] ?? "";
@@ -1675,6 +1831,11 @@ function AutoInboxApp() {
         hasSensitiveSignal(mail, safetySettings),
     ).length,
   };
+  const mailboxCounts: Record<MailboxScope, number> = {
+    inbox: mailItems.length,
+    drafts: mailItems.filter((mail) => Boolean(gmailDraftIds[mail.id] || mail.gmailDraftId)).length,
+    sent: mailItems.filter((mail) => sentIds.includes(mail.id)).length,
+  };
   const aiBridgeAvailable = hasDesktopAIBridge();
   const aiIntegrationStatus = getAIStatusLabel(aiStatus, t.ai);
   const aiIntegrationTone = getAIIntegrationTone(aiStatus.status);
@@ -1699,6 +1860,17 @@ function AutoInboxApp() {
   const sheetsIntegrationTone = getSheetsIntegrationTone(sheetsSync.status);
   const sheetsModeLabel = t.sheets.mode[sheetsSync.mode];
   const normalizedSheetId = extractSpreadsheetId(sheetInput);
+  const productionSetupChecks = getProductionSetupChecks(
+    setupSettings,
+    normalizedSheetId,
+    t.setup,
+  );
+  const productionSetupScore = Math.round(
+    (productionSetupChecks.filter((step) => step.done).length / productionSetupChecks.length) *
+      100,
+  );
+  const setupEnv = buildSetupEnv(setupSettings, normalizedSheetId);
+  const supportAddress = setupSettings.supportAddress.trim() || defaultProductionSetup.supportAddress;
   const sheetsLastSyncLabel = sheetsSync.lastSyncAt
     ? new Intl.DateTimeFormat(language === "es" ? "es-AR" : "en-US", {
         hour: "2-digit",
@@ -1784,6 +1956,10 @@ function AutoInboxApp() {
   }, [costSettings]);
 
   React.useEffect(() => {
+    persistProductionSetup(setupSettings);
+  }, [setupSettings]);
+
+  React.useEffect(() => {
     let mounted = true;
 
     void getAutoInboxAIStatus()
@@ -1845,6 +2021,8 @@ function AutoInboxApp() {
   }, [sheetsBridgeAvailable]);
 
   const filtered = mailItems.filter((mail) => {
+    if (mailboxScope === "drafts" && !gmailDraftIds[mail.id] && !mail.gmailDraftId) return false;
+    if (mailboxScope === "sent" && !sentIds.includes(mail.id)) return false;
     const translatedIntent = mail.intentLabel || t.intents[mail.intentKey];
     const matchesQuery = `${mail.sender} ${mail.subject} ${mail.preview} ${translatedIntent}`
       .toLowerCase()
@@ -1860,6 +2038,37 @@ function AutoInboxApp() {
     }
     return true;
   });
+
+  const openMailbox = (scope: MailboxScope) => {
+    setActiveView("inbox");
+    setMailboxScope(scope);
+    setActiveFolder("all");
+    setQuery("");
+    setMobilePane("list");
+
+    const firstMail = mailItems.find((mail) => {
+      if (scope === "drafts") return Boolean(gmailDraftIds[mail.id] || mail.gmailDraftId);
+      if (scope === "sent") return sentIds.includes(mail.id);
+      return true;
+    });
+    if (firstMail) setSelectedId(firstMail.id);
+  };
+
+  const openWorkspaceView = (view: Exclude<AppView, "inbox">) => {
+    setActiveView(view);
+    setMobilePane("list");
+  };
+
+  const selectMail = (mailId: string) => {
+    setSelectedId(mailId);
+    setMobilePane("message");
+  };
+
+  const clearMailboxFilters = () => {
+    setQuery("");
+    setActiveFolder("all");
+    if (mailboxCounts[mailboxScope] === 0) openMailbox("inbox");
+  };
 
   const updateWorkspaceProfile = <Key extends keyof WorkspaceProfile>(
     key: Key,
@@ -1895,6 +2104,34 @@ function AutoInboxApp() {
     setCostSettings((current) => ({ ...current, [key]: value }));
   };
 
+  const updateSetupSetting = <Key extends keyof ProductionSetupSettings>(
+    key: Key,
+    value: ProductionSetupSettings[Key],
+  ) => {
+    setSetupSettings((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateSetupProvider = (provider: AutoInboxAIProvider) => {
+    setSetupSettings((current) => ({
+      ...current,
+      aiProvider: provider,
+      aiModel:
+        current.aiModel && current.aiModel !== defaultProviderModels[current.aiProvider]
+          ? current.aiModel
+          : defaultProviderModels[provider],
+      aiBaseUrl:
+        current.aiBaseUrl && current.aiBaseUrl !== defaultProviderBaseUrls[current.aiProvider]
+          ? current.aiBaseUrl
+          : defaultProviderBaseUrls[provider],
+      aiJsonMode:
+        provider === "deepseek" || provider === "moonshot"
+          ? true
+          : provider === "custom-openai-compatible"
+            ? current.aiJsonMode
+            : false,
+    }));
+  };
+
   const applyResponseTemplate = (template: ResponseTemplate, mode: "replace" | "append") => {
     const nextDraft =
       mode === "append" && draftText.trim()
@@ -1910,6 +2147,16 @@ function AutoInboxApp() {
       window.setTimeout(() => setReportCopied(false), 1400);
     } catch {
       setReportCopied(false);
+    }
+  };
+
+  const copySetupEnv = async () => {
+    try {
+      await window.navigator.clipboard?.writeText(setupEnv);
+      setSetupCopied(true);
+      window.setTimeout(() => setSetupCopied(false), 1400);
+    } catch {
+      setSetupCopied(false);
     }
   };
 
@@ -2339,7 +2586,13 @@ function AutoInboxApp() {
   ]);
 
   return (
-    <main className="app-frame" data-theme={theme}>
+    <main
+      className="app-frame"
+      data-theme={theme}
+      data-view={activeView}
+      data-mobile-pane={mobilePane}
+      data-empty={activeView === "inbox" && filtered.length === 0 ? "true" : "false"}
+    >
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">
@@ -2365,23 +2618,49 @@ function AutoInboxApp() {
         </button>
 
         <nav className="sidebar-section" aria-label={t.ariaMailbox}>
-          <NavItem icon={<Inbox size={17} />} label={t.nav.inbox} count={mailItems.length} active />
+          <NavItem
+            icon={<Inbox size={17} />}
+            label={t.nav.inbox}
+            count={mailboxCounts.inbox}
+            active={activeView === "inbox" && mailboxScope === "inbox"}
+            onClick={() => openMailbox("inbox")}
+          />
           <NavItem
             icon={<FilePenLine size={17} />}
             label={t.nav.drafts}
-            count={Object.keys(gmailDraftIds).length}
+            count={mailboxCounts.drafts}
+            active={activeView === "inbox" && mailboxScope === "drafts"}
+            onClick={() => openMailbox("drafts")}
           />
-          <NavItem icon={<Send size={17} />} label={t.nav.sent} count={sentIds.length} />
-          <NavItem icon={<Mail size={17} />} label={t.nav.allMail} />
-          <NavItem icon={<Shield size={17} />} label={t.nav.spam} />
-          <NavItem icon={<Trash2 size={17} />} label={t.nav.trash} />
+          <NavItem
+            icon={<Send size={17} />}
+            label={t.nav.sent}
+            count={mailboxCounts.sent}
+            active={activeView === "inbox" && mailboxScope === "sent"}
+            onClick={() => openMailbox("sent")}
+          />
         </nav>
 
         <div className="sidebar-group">
           <p>{t.sections.automation}</p>
-          <NavItem icon={<Settings size={17} />} label={t.nav.rules} />
-          <NavItem icon={<PenLine size={17} />} label={t.nav.signatures} />
-          <NavItem icon={<Settings size={17} />} label={t.nav.settings} />
+          <NavItem
+            icon={<Gauge size={17} />}
+            label={t.views.automation.label}
+            active={activeView === "automation"}
+            onClick={() => openWorkspaceView("automation")}
+          />
+          <NavItem
+            icon={<BarChart3 size={17} />}
+            label={t.views.reports.label}
+            active={activeView === "reports"}
+            onClick={() => openWorkspaceView("reports")}
+          />
+          <NavItem
+            icon={<Settings size={17} />}
+            label={t.views.settings.label}
+            active={activeView === "settings"}
+            onClick={() => openWorkspaceView("settings")}
+          />
         </div>
 
         <div className="sidebar-group integrations">
@@ -2408,17 +2687,18 @@ function AutoInboxApp() {
 
         <div className="mode-box">
           <p>{t.sections.mode}</p>
-          <button>
+          <div className="mode-status">
+            <ShieldCheck size={15} />
             {t.draftFirstMode}
-            <ChevronDown size={15} />
-          </button>
+          </div>
         </div>
 
         <div className="settings-box">
           <p>{t.sections.settings}</p>
-          <label className="language-select">
+          <label className="language-select" htmlFor="language-select">
             <span>{t.language}</span>
             <select
+              id="language-select"
               value={language}
               onChange={(event) => setLanguage(event.target.value as Language)}
             >
@@ -2426,9 +2706,13 @@ function AutoInboxApp() {
               <option value="es">{t.languageName.es}</option>
             </select>
           </label>
-          <label className="language-select">
+          <label className="language-select" htmlFor="theme-select">
             <span>{t.theme}</span>
-            <select value={theme} onChange={(event) => setTheme(event.target.value as Theme)}>
+            <select
+              id="theme-select"
+              value={theme}
+              onChange={(event) => setTheme(event.target.value as Theme)}
+            >
               <option value="light">{t.themeName.light}</option>
               <option value="dark">{t.themeName.dark}</option>
             </select>
@@ -2456,25 +2740,36 @@ function AutoInboxApp() {
           </button>
         </div>
 
-        <div className="mail-tabs">
-          {(Object.keys(folderCounts) as MailFolder[]).map((folder) => (
-            <button
-              key={folder}
-              className={activeFolder === folder ? "active" : ""}
-              onClick={() => setActiveFolder(folder)}
-            >
-              {t.folders[folder]}
-              <span>{folderCounts[folder]}</span>
-            </button>
-          ))}
-        </div>
+        {mailboxScope === "inbox" ? (
+          <div className="mail-tabs">
+            {(Object.keys(folderCounts) as MailFolder[]).map((folder) => (
+              <button
+                key={folder}
+                className={activeFolder === folder ? "active" : ""}
+                onClick={() => setActiveFolder(folder)}
+              >
+                {t.folders[folder]}
+                <span>{folderCounts[folder]}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mail-scope-summary">
+            <strong>{mailboxScope === "drafts" ? t.nav.drafts : t.nav.sent}</strong>
+            <span>
+              {mailboxScope === "drafts"
+                ? t.mailbox.draftsDescription
+                : t.mailbox.sentDescription}
+            </span>
+          </div>
+        )}
 
         <div className="mail-list">
-          {filtered.map((mail) => (
+          {filtered.length > 0 ? filtered.map((mail) => (
             <button
               className={`mail-card ${mail.id === selected.id ? "selected" : ""}`}
               key={mail.id}
-              onClick={() => setSelectedId(mail.id)}
+              onClick={() => selectMail(mail.id)}
             >
               <Avatar initials={mail.initials} accent={mail.accent} />
               <div className="mail-card-content">
@@ -2487,38 +2782,23 @@ function AutoInboxApp() {
               </div>
               {mail.unread ? <span className="unread-dot" /> : null}
             </button>
-          ))}
+          )) : (
+            <div className="mail-empty-state" role="status">
+              <Inbox size={22} />
+              <strong>{t.mailbox.emptyTitle}</strong>
+              <span>{t.mailbox.emptyDescription}</span>
+              <button onClick={clearMailboxFilters}>{t.mailbox.clear}</button>
+            </div>
+          )}
         </div>
       </section>
 
       <section className="reader-column">
         <div className="reader-toolbar">
-          <button title={t.toolbar.back}>
+          <button title={t.toolbar.back} onClick={() => setMobilePane("list")}>
             <ArrowLeft size={19} />
           </button>
-          <div>
-            <button title={t.toolbar.archive}>
-              <Archive size={17} />
-            </button>
-            <button title={t.toolbar.info}>
-              <Info size={17} />
-            </button>
-            <button title={t.toolbar.snooze}>
-              <Clock3 size={17} />
-            </button>
-            <button title={t.toolbar.trash}>
-              <Trash2 size={17} />
-            </button>
-            <button title={t.toolbar.markUnread}>
-              <Mail size={17} />
-            </button>
-            <button title={t.toolbar.tag}>
-              <Tag size={17} />
-            </button>
-            <button title={t.toolbar.more}>
-              <MoreVertical size={17} />
-            </button>
-          </div>
+          <span>{t.nav.inbox}</span>
         </div>
 
         <article className="email-thread">
@@ -2529,16 +2809,10 @@ function AutoInboxApp() {
             <div>
               <strong>{selected.sender}</strong>
               <span>
-                {selected.email} {t.to} support@yourstore.com
+                {selected.email} {t.to} {supportAddress}
               </span>
             </div>
             <time>{getMailTime(selected, t.time)}</time>
-            <button title={t.toolbar.reply}>
-              <Reply size={17} />
-            </button>
-            <button title={t.toolbar.more}>
-              <MoreVertical size={17} />
-            </button>
           </div>
 
           <div className="ai-chips">
@@ -2679,7 +2953,21 @@ function AutoInboxApp() {
       </section>
 
       <aside className="assistant-column">
-        <section className="workspace-card">
+        {workspaceViewCopy ? (
+          <header className="workspace-view-header">
+            <div>
+              <span>{workspaceViewCopy.label}</span>
+              <h1>{workspaceViewCopy.title}</h1>
+              <p>{workspaceViewCopy.subtitle}</p>
+            </div>
+            <button className="workspace-back" onClick={() => openMailbox("inbox")}>
+              <ArrowLeft size={16} />
+              {t.nav.inbox}
+            </button>
+          </header>
+        ) : null}
+
+        <section className="workspace-card settings-panel">
           <div className="section-heading">
             <h2>
               <Store size={17} />
@@ -2783,7 +3071,7 @@ function AutoInboxApp() {
           </div>
         </section>
 
-        <section className="value-card">
+        <section className="value-card reports-panel">
           <div className="section-heading">
             <h2>
               <BarChart3 size={17} />
@@ -2797,7 +3085,7 @@ function AutoInboxApp() {
           </div>
         </section>
 
-        <section className="cost-card">
+        <section className="cost-card reports-panel">
           <div className="section-heading">
             <h2>
               <BarChart3 size={17} />
@@ -2861,7 +3149,7 @@ function AutoInboxApp() {
           </div>
         </section>
 
-        <section className="strategy-card">
+        <section className="strategy-card reports-panel">
           <div className="section-heading">
             <h2>
               <Target size={17} />
@@ -2910,7 +3198,7 @@ function AutoInboxApp() {
           </div>
         </section>
 
-        <section className="audit-card">
+        <section className="audit-card reports-panel">
           <div className="section-heading">
             <h2>
               <ClipboardCheck size={17} />
@@ -2932,7 +3220,7 @@ function AutoInboxApp() {
           </div>
         </section>
 
-        <section className="safety-rules-card">
+        <section className="safety-rules-card automation-panel">
           <div className="section-heading">
             <h2>
               <ShieldCheck size={17} />
@@ -2966,7 +3254,7 @@ function AutoInboxApp() {
           </label>
         </section>
 
-        <section className="report-card">
+        <section className="report-card reports-panel panel-wide">
           <div className="section-heading">
             <h2>
               <FilePenLine size={17} />
@@ -2988,7 +3276,7 @@ function AutoInboxApp() {
           </div>
         </section>
 
-        <section className="template-card">
+        <section className="template-card inbox-panel">
           <div className="section-heading">
             <h2>
               <FilePenLine size={17} />
@@ -3020,38 +3308,12 @@ function AutoInboxApp() {
           </div>
         </section>
 
-        <section className="reply-panel">
+        <section className="reply-panel inbox-panel">
           <div className="reply-heading">
             <h2>
               <Bot size={18} />
               {t.sections.suggestedReply}
             </h2>
-            <button onClick={() => void processMailWithAI(selected)}>
-              <PenLine size={15} />
-              {t.draft}
-            </button>
-          </div>
-
-          <div className="format-toolbar" aria-label={t.formattingToolbar}>
-            <button title={t.toolbar.undo}>
-              <Undo2 size={16} />
-            </button>
-            <button title={t.toolbar.regenerate} onClick={() => void processMailWithAI(selected)}>
-              <RotateCcw size={16} />
-            </button>
-            <span />
-            <button title={t.toolbar.bold}>
-              <Bold size={16} />
-            </button>
-            <button title={t.toolbar.italic}>
-              <Italic size={16} />
-            </button>
-            <button title={t.toolbar.bulletedList}>
-              <List size={16} />
-            </button>
-            <button title={t.toolbar.link}>
-              <Link size={16} />
-            </button>
           </div>
 
           <textarea
@@ -3138,7 +3400,7 @@ function AutoInboxApp() {
           </p>
         </section>
 
-        <section className="gmail-card">
+        <section className="gmail-card automation-panel panel-wide">
           <div className="section-heading">
             <h2>
               <AtSign size={17} />
@@ -3239,7 +3501,7 @@ function AutoInboxApp() {
           ) : null}
         </section>
 
-        <section className="gmail-card">
+        <section className="gmail-card automation-panel ai-card">
           <div className="section-heading">
             <h2>
               <Sparkles size={17} />
@@ -3258,7 +3520,7 @@ function AutoInboxApp() {
           </div>
         </section>
 
-        <section className="onboarding-card">
+        <section className="onboarding-card automation-panel">
           <div className="section-heading">
             <h2>
               <ListChecks size={17} />
@@ -3279,7 +3541,93 @@ function AutoInboxApp() {
           </div>
         </section>
 
-        <section className="sheets-card">
+        <section className="setup-card settings-panel panel-wide">
+          <div className="section-heading">
+            <h2>
+              <Settings size={17} />
+              {t.setup.title}
+            </h2>
+            <span className="readiness-badge">{productionSetupScore}%</span>
+          </div>
+          <p className="gmail-description">{t.setup.subtitle}</p>
+
+          <div className="setup-grid">
+            <label>
+              <span>{t.setup.supportAddress}</span>
+              <input
+                value={setupSettings.supportAddress}
+                onChange={(event) => updateSetupSetting("supportAddress", event.target.value)}
+              />
+            </label>
+            <label>
+              <span>{t.setup.gmailClientId}</span>
+              <input
+                value={setupSettings.oauthClientId}
+                onChange={(event) => updateSetupSetting("oauthClientId", event.target.value)}
+              />
+            </label>
+            <label>
+              <span>{t.setup.aiProvider}</span>
+              <select
+                value={setupSettings.aiProvider}
+                onChange={(event) => updateSetupProvider(event.target.value as AutoInboxAIProvider)}
+              >
+                {aiProviderOptions.map((provider) => (
+                  <option value={provider} key={provider}>
+                    {t.setup.providers[provider]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{t.setup.aiModel}</span>
+              <input
+                value={setupSettings.aiModel}
+                onChange={(event) => updateSetupSetting("aiModel", event.target.value)}
+              />
+            </label>
+            <label className="setup-wide">
+              <span>{t.setup.aiBaseUrl}</span>
+              <input
+                value={setupSettings.aiBaseUrl}
+                onChange={(event) => updateSetupSetting("aiBaseUrl", event.target.value)}
+              />
+            </label>
+            <label className="setup-toggle">
+              <input
+                type="checkbox"
+                checked={setupSettings.aiJsonMode}
+                onChange={(event) => updateSetupSetting("aiJsonMode", event.target.checked)}
+              />
+              <span>{t.setup.aiJsonMode}</span>
+            </label>
+          </div>
+
+          <div className="setup-checks">
+            <strong>{t.setup.verification}</strong>
+            {productionSetupChecks.map((step) => (
+              <label key={step.key}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(setupSettings[step.key])}
+                  onChange={(event) => updateSetupSetting(step.key, event.target.checked)}
+                />
+                <span>{step.label}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="env-preview">
+            <div>
+              <strong>{t.setup.env}</strong>
+              <button onClick={copySetupEnv}>{setupCopied ? t.setup.copied : t.setup.copyEnv}</button>
+            </div>
+            <pre>{setupEnv}</pre>
+          </div>
+          <p className="setup-note">{t.setup.secretsNote}</p>
+        </section>
+
+        <section className="sheets-card automation-panel panel-wide">
           <div className="section-heading">
             <h2>
               <Archive size={17} />
@@ -3387,7 +3735,7 @@ function AutoInboxApp() {
           ) : null}
         </section>
 
-        <section className="automation-card">
+        <section className="automation-card automation-panel">
           <div className="section-heading">
             <h2>{t.sections.automation}</h2>
             <span className={`running-pill ${queuePaused ? "paused" : ""}`}>
@@ -3400,10 +3748,9 @@ function AutoInboxApp() {
           </div>
         </section>
 
-        <section className="activity-card">
+        <section className="activity-card automation-panel">
           <div className="section-heading">
             <h2>{t.sections.activityLog}</h2>
-            <button>{t.viewAll}</button>
           </div>
           <div className="activity-list">
             {selectedActivityItems.map((item) => (
@@ -3424,17 +3771,23 @@ function NavItem({
   label,
   count,
   active,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   count?: number;
   active?: boolean;
+  onClick: () => void;
 }) {
   return (
-    <button className={`nav-item ${active ? "active" : ""}`}>
+    <button
+      className={`nav-item ${active ? "active" : ""}`}
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+    >
       {icon}
       <span>{label}</span>
-      {count ? <strong>{count}</strong> : null}
+      {count !== undefined ? <strong>{count}</strong> : null}
     </button>
   );
 }
@@ -3814,6 +4167,56 @@ function getCostMetrics(settings: CostSettings, labels: typeof copy.en.cost) {
   ];
 }
 
+function getProductionSetupChecks(
+  settings: ProductionSetupSettings,
+  spreadsheetId: string,
+  labels: typeof copy.en.setup,
+): Array<{ key: ProductionSetupCheckKey; label: string; done: boolean }> {
+  return [
+    {
+      key: "gmailCredentialsVerified",
+      label: labels.gmailVerified,
+      done: settings.gmailCredentialsVerified && Boolean(settings.oauthClientId.trim()),
+    },
+    {
+      key: "sheetsTabsVerified",
+      label: labels.sheetsVerified,
+      done: settings.sheetsTabsVerified && Boolean(spreadsheetId),
+    },
+    {
+      key: "aiKeyVerified",
+      label: labels.aiKeyVerified,
+      done: settings.aiKeyVerified && Boolean(settings.aiProvider && settings.aiModel.trim()),
+    },
+    {
+      key: "reviewPolicyAccepted",
+      label: labels.reviewAccepted,
+      done: settings.reviewPolicyAccepted,
+    },
+  ];
+}
+
+function buildSetupEnv(settings: ProductionSetupSettings, spreadsheetId: string) {
+  const oauthClientId = settings.oauthClientId.trim() || "your-google-oauth-client-id";
+
+  return [
+    `GOOGLE_OAUTH_CLIENT_ID=${oauthClientId}`,
+    "GOOGLE_OAUTH_CLIENT_SECRET=",
+    `VITE_GOOGLE_OAUTH_CLIENT_ID=${oauthClientId}`,
+    "",
+    `AI_PROVIDER=${settings.aiProvider}`,
+    `AI_MODEL=${settings.aiModel.trim() || defaultProviderModels[settings.aiProvider]}`,
+    "AI_API_KEY=",
+    settings.aiBaseUrl.trim() ? `AI_BASE_URL=${settings.aiBaseUrl.trim()}` : "",
+    settings.aiJsonMode ? "AI_JSON_MODE=true" : "",
+    "",
+    spreadsheetId ? `# Google Sheet selected in-app: ${spreadsheetId}` : "# Paste the Google Sheet ID in the app.",
+    "VITE_GMAIL_SYNC_INTERVAL_SECONDS=90",
+  ]
+    .filter((line, index, lines) => line || (lines[index - 1] && lines[index + 1]))
+    .join("\n");
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -4147,6 +4550,55 @@ function persistCostSettings(settings: CostSettings) {
   window.localStorage.setItem(costSettingsStorageKey, JSON.stringify(settings));
 }
 
+function loadPersistedProductionSetup(): ProductionSetupSettings {
+  if (typeof window === "undefined") return defaultProductionSetup;
+
+  try {
+    const stored = window.localStorage.getItem(productionSetupStorageKey);
+    if (!stored) return defaultProductionSetup;
+    const parsed = JSON.parse(stored) as Partial<ProductionSetupSettings>;
+    const aiProvider = isAutoInboxAIProvider(parsed.aiProvider)
+      ? parsed.aiProvider
+      : defaultProductionSetup.aiProvider;
+
+    return {
+      supportAddress:
+        typeof parsed.supportAddress === "string"
+          ? parsed.supportAddress
+          : defaultProductionSetup.supportAddress,
+      oauthClientId:
+        typeof parsed.oauthClientId === "string"
+          ? parsed.oauthClientId
+          : defaultProductionSetup.oauthClientId,
+      aiProvider,
+      aiModel:
+        typeof parsed.aiModel === "string" && parsed.aiModel.trim()
+          ? parsed.aiModel
+          : defaultProviderModels[aiProvider],
+      aiBaseUrl:
+        typeof parsed.aiBaseUrl === "string"
+          ? parsed.aiBaseUrl
+          : defaultProviderBaseUrls[aiProvider],
+      aiJsonMode:
+        typeof parsed.aiJsonMode === "boolean" ? parsed.aiJsonMode : defaultProductionSetup.aiJsonMode,
+      gmailCredentialsVerified: Boolean(parsed.gmailCredentialsVerified),
+      sheetsTabsVerified: Boolean(parsed.sheetsTabsVerified),
+      aiKeyVerified: Boolean(parsed.aiKeyVerified),
+      reviewPolicyAccepted:
+        typeof parsed.reviewPolicyAccepted === "boolean"
+          ? parsed.reviewPolicyAccepted
+          : defaultProductionSetup.reviewPolicyAccepted,
+    };
+  } catch {
+    return defaultProductionSetup;
+  }
+}
+
+function persistProductionSetup(settings: ProductionSetupSettings) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(productionSetupStorageKey, JSON.stringify(settings));
+}
+
 function clampPositiveNumber(value: unknown, fallback: number) {
   const numeric = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
@@ -4179,6 +4631,10 @@ function isSlaKey(value: unknown): value is SlaKey {
     value === "sameDay" ||
     value === "nextBusinessDay"
   );
+}
+
+function isAutoInboxAIProvider(value: unknown): value is AutoInboxAIProvider {
+  return aiProviderOptions.includes(value as AutoInboxAIProvider);
 }
 
 function mergeMailItems(
